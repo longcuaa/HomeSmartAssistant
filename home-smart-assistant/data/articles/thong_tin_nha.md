@@ -9,10 +9,11 @@
 - Thói quen chung: cả nhà ăn tối khoảng 19:00, đi ngủ khoảng 23:00.
 
 ## Các phòng và thiết bị
-- Phòng khách: đèn phòng khách, quạt phòng khách. Là nơi tiếp khách và xem TV.
-- Phòng ngủ chính: đèn phòng ngủ, điều hòa phòng ngủ. Chủ nhà thích để điều hòa 25 độ ban đêm.
-- Bếp: (mô tả thiết bị, ví dụ máy lọc nước, nồi cơm điện).
-- Tầng/khu vực: (ví dụ phòng ngủ chính ở tầng 2, phòng khách tầng 1).
+- Phòng khách: đèn trần, đèn LED, điều hòa.
+- Phòng bếp: đèn.
+- Phòng ngủ: đèn, quạt, điều hòa.
+- Phòng học: đèn, quạt.
+- Hành lang: đèn.
 
 ## Thói quen và lịch sinh hoạt
 - Buổi sáng: (ví dụ) bật đèn bếp lúc 6:30, pha cà phê.

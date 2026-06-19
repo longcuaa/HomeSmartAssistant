@@ -7,15 +7,23 @@ device.py tu chuyen sang gia lap, va cac ham o day fall back ve dict HOME/SENSOR
 Phan khai bao cong cu TOOLS la hop dong voi model, giu on dinh du ha tang ben duoi thay doi.
 """
 import json
+import unicodedata
 import config
 from app import llm, vector_store, memory, device as hub, weather, calendar_store
 
 # Trang thai nha gia lap, dung khi khong co broker. Thuc te doc qua MQTT.
+# Key dat ASCII khong dau theo quy uoc; ham _find_device() khop ca khi nguoi dung noi co dau.
 HOME = {
-    "den phong khach": {"on": False},
+    "den tran phong khach": {"on": False},
+    "den led phong khach": {"on": False},
+    "dieu hoa phong khach": {"on": False, "temp": 26},
+    "den phong bep": {"on": False},
     "den phong ngu": {"on": False},
-    "quat phong khach": {"on": False},
+    "quat phong ngu": {"on": False},
     "dieu hoa phong ngu": {"on": False, "temp": 26},
+    "den phong hoc": {"on": False},
+    "quat phong hoc": {"on": False},
+    "den hanh lang": {"on": False},
 }
 
 # Gia tri cam bien gia lap, dung khi khong co cam bien that tra ve.
@@ -56,6 +64,26 @@ def _parse_value(raw):
         return float(raw) if "." in raw else int(raw)
     except ValueError:
         return raw
+
+
+def _norm(s):
+    """Bo dau, ve chu thuong de khop ten thiet bi du nguoi dung go co dau hay khong, hoa hay thuong."""
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return s.replace("đ", "d").strip()
+
+
+def _find_device(name):
+    """Tim key thiet bi that trong HOME khop voi ten nguoi dung noi (khong phan biet dau/hoa thuong)."""
+    if not name:
+        return None
+    if name in HOME:
+        return name
+    target = _norm(name)
+    for key in HOME:
+        if _norm(key) == target:
+            return key
+    return None
 
 
 def turn_on_device(device):
@@ -175,17 +203,18 @@ def add_event(date, time="", title=""):
 
 def control_device(device, state=None, temperature=None):
     """Dieu khien thiet bi: bat/tat va/hoac dat nhiet do (gop turn_on/turn_off/set_temperature)."""
-    if device not in HOME:
+    key = _find_device(device)
+    if key is None:
         return f"Khong tim thay thiet bi '{device}'."
     if temperature is not None:
-        return set_temperature(device, temperature)
+        return set_temperature(key, temperature)
     if state is None:
         return "Can cho biet bat hay tat thiet bi."
     s = str(state).strip().lower()
     if s in ("on", "bat", "mo", "true", "1"):
-        return turn_on_device(device)
+        return turn_on_device(key)
     if s in ("off", "tat", "dong", "false", "0"):
-        return turn_off_device(device)
+        return turn_off_device(key)
     return f"Trang thai '{state}' khong hop le (chi 'on' hoac 'off')."
 
 
@@ -251,10 +280,12 @@ TOOLS = [
         }, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "remember",
-        "description": "Ghi nho thong tin chu nha noi ro: so thich, thoi quen, hoac thong tin co dinh "
-                       "ve nha/gia dinh (ten phong, thanh vien...).",
+        "description": "Ghi nho khi chu nha BAY TO so thich/thoi quen hoac yeu cau nho. Kich hoat boi "
+                       "cac cau nhu 'toi thich...', 'toi thuong...', 'nho giup toi...', 'nho la...', "
+                       "'lan sau...'. Vi du 'toi thich de dieu hoa 25 do ban dem' -> remember(info='thich "
+                       "de dieu hoa 25 do ban dem'). Day la GHI NHO, KHONG phai dieu khien thiet bi hay tra cuu.",
         "parameters": {"type": "object", "properties": {
-            "info": {"type": "string", "description": "Thong tin can ghi nho"},
+            "info": {"type": "string", "description": "Noi dung so thich/thong tin can ghi nho"},
         }, "required": ["info"]}}},
     {"type": "function", "function": {
         "name": "get_weather",

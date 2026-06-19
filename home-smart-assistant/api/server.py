@@ -13,7 +13,7 @@ from typing import Optional, List
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app import butler, scheduler, vector_store
+from app import butler, scheduler, vector_store, llm
 
 _sched = None
 
@@ -21,6 +21,7 @@ _sched = None
 @asynccontextmanager
 async def lifespan(app):
     global _sched
+    llm.warm_up()  # nap san model luc khoi dong de request dau tien khong bi tre
     _sched = scheduler.start_background()
     yield
     if _sched:

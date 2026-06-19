@@ -17,6 +17,17 @@ ENABLE_THINKING = os.getenv("ENABLE_THINKING", "false").lower() in ("1", "true",
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))  # gioi han do dai cau tra loi cho nhanh va gon
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))  # giay; tranh treo lau khi model phan hoi cham
 
+# Toi uu rieng cho Ollama (local). Khi chuyen sang vLLM tren AWS dat OLLAMA_TUNING=false
+# de khong gui cac truong rieng cua Ollama (keep_alive, options) lam vLLM bao loi.
+OLLAMA_TUNING = os.getenv("OLLAMA_TUNING", "true").lower() in ("1", "true", "yes")
+# Giu model nam san trong VRAM giua cac luot, tranh tre vai giay khi nap lai. "-1" = giu mai.
+# Hieu qua nhat khi dat o phia Ollama server: env OLLAMA_KEEP_ALIVE=-1.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "-1")
+# Cua so ngu canh: du chua system + tools + lich su + ket qua RAG ma khong phi VRAM.
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+# In do tre moi luot goi model ra stderr de chan doan toc do (TTFT khi stream, tong khi khong).
+LLM_DEBUG = os.getenv("LLM_DEBUG", "false").lower() in ("1", "true", "yes")
+
 # Duong dan
 ARTICLES_DIR = os.getenv("ARTICLES_DIR", "data/articles")
 CHROMA_DIR = os.getenv("CHROMA_DIR", "data/chroma_db")

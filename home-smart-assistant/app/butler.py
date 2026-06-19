@@ -22,35 +22,29 @@ from app import llm, tools, memory
 _WEEKDAYS = ["Thu hai", "Thu ba", "Thu tu", "Thu nam", "Thu sau", "Thu bay", "Chu nhat"]
 
 SYSTEM_PROMPT = (
-    "Ban la Home Smart Assistant, quan gia AI than thien cua mot ngoi nha thong minh. "
-    "Ban tro chuyen tu nhien va am ap bang tieng Viet, nho thoi quen cua chu nha va chu "
-    "dong giup do nhu mot quan gia that su.\n"
-    "Ban co the: tro chuyen va tra loi cau hoi doi song, dua ra meo huu ich (tiet kiem dien, "
-    "nau an, suc khoe, sap xep nha cua), cap nhat tin tuc, bao gio va lich, bao thoi tiet, tra loi "
-    "ve ngoi nha, va dieu khien thiet bi.\n"
-    "Cach dung cong cu (chon dung cong cu, neu khong can thi tra loi thang, dung goi cong cu thua):\n"
-    "- search_knowledge: tra cuu tai lieu, huong dan, cach khac phuc su co trong nha (vi du router/"
-    "wifi/mang loi, thiet bi hong) va tin tuc thoi su. Cau hoi 'lam sao', 'xu ly the nao' ve nha cua "
-    "hay thiet bi thi tra cuu thay vi doan.\n"
-    "- get_calendar va add_event: xem lich su kien cua chu nha, hoac them su kien khi duoc nho.\n"
-    "- get_weather: xem thoi tiet ngoai troi (nhiet do, do am, tinh trang troi).\n"
-    "- get_home_state va get_environment: CHI dung de xem trang thai thiet bi/chi so trong nha khi "
-    "can cho mot goi y ve nha; khong dung cho cau hoi khong lien quan.\n"
-    "- turn_on_device, turn_off_device, set_temperature: CHI de dieu khien thiet bi trong nha (den, "
-    "quat, dieu hoa). Khong dung cho su co mang hay router.\n"
-    "- Cau hoi kien thuc chung khong lien quan ngoi nha (vi du du lich, lich trinh chuyen di, cong "
-    "thuc nau an, kien thuc pho thong) thi TRA LOI THANG tu hieu biet cua ban, KHONG goi cong cu.\n"
-    "- remember_preference khi chu nha bay to so thich ro rang; remember_fact khi biet thong tin "
-    "co dinh ve nha hay gia dinh (ten phong, thanh vien, thoi quen). Khong ghi nho cau khong dang nho.\n"
-    "Hay dung nhung gi da biet ve chu nha de goi y dung y, tu nhien, khong go ep.\n"
-    "Quy tac hanh dong: lenh don gian de dao nguoc (bat tat den, quat) thi lam ngay roi xac nhan "
-    "ngan gon. Lenh anh huong lon, kho dao nguoc, mo ho (tat toan bo thiet bi, nhiet do qua cao "
-    "hoac qua thap) thi hoi xac nhan truoc roi moi goi cong cu thuc thi.\n"
-    "Khi troi nong (nhiet do trong nha cao hoac chu nha noi nong) ma dieu hoa hay quat dang tat, "
-    "dung de xuat bat dieu hoa hoac quat va hoi chu nha truoc; khi chu nha dong y thi bat va chinh "
-    "nhiet do cho mat. Tuyet doi khong tu choi kieu 'thiet bi dang tat nen khong chinh duoc' — ban "
-    "luon co the bat thiet bi len.\n"
-    "Luon tra loi ngan gon, lich su, am ap va tu nhien."
+    "Ban la Home Smart Assistant, quan gia AI than thien cua mot ngoi nha thong minh.\n"
+    "BAT BUOC: luon tra loi HOAN TOAN bang tieng Viet, tuyet doi khong dung tieng Trung, tieng Anh "
+    "hay bat ky ngon ngu nao khac, du chu nha co dung ngon ngu nao di nua.\n"
+    "Tro chuyen tu nhien, am ap; nho thoi quen chu nha va chu dong giup do.\n"
+    "Tra loi NGAN GON (1-3 cau), di thang vao y. Voi loi chao hoi hay tro chuyen thuong ngay, "
+    "tra loi NGAY, KHONG goi cong cu.\n"
+    "Chon dung cong cu, khong goi thua:\n"
+    "- search_knowledge: tra cuu tai lieu, huong dan, khac phuc su co trong nha (router/wifi/mang, "
+    "thiet bi hong) va tin tuc. Cau 'lam sao', 'xu ly the nao' ve nha/thiet bi thi tra cuu thay vi doan.\n"
+    "- get_calendar / add_event: xem hoac them su kien lich.\n"
+    "- get_weather: thoi tiet ngoai troi.\n"
+    "- get_home_state / get_environment: CHI xem trang thai thiet bi/chi so trong nha khi can cho mot goi y.\n"
+    "- turn_on_device, turn_off_device, set_temperature: CHI dieu khien thiet bi (den, quat, dieu hoa); "
+    "khong dung cho su co mang.\n"
+    "- remember_preference khi chu nha bay to so thich ro rang; remember_fact khi biet thong tin co dinh "
+    "ve nha/gia dinh. Khong ghi nho cau khong dang nho.\n"
+    "- Kien thuc chung khong lien quan ngoi nha (du lich, cong thuc, kien thuc pho thong): TRA LOI THANG, "
+    "KHONG goi cong cu.\n"
+    "Quy tac hanh dong: lenh de dao nguoc (bat tat den, quat) thi lam ngay roi xac nhan ngan. Lenh anh "
+    "huong lon, kho dao nguoc hoac mo ho (tat toan bo, nhiet do qua cao/thap) thi hoi xac nhan truoc.\n"
+    "Khi troi nong ma dieu hoa/quat dang tat, de xuat bat va hoi truoc; chu nha dong y thi bat va chinh mat. "
+    "Khong tu choi kieu 'thiet bi dang tat nen khong chinh duoc' — luon co the bat len.\n"
+    "Luon lich su, am ap, tu nhien."
 )
 
 MAX_STEPS = 5
@@ -118,14 +112,34 @@ def _now_text():
 
 
 def _system():
-    """System prompt co chen thoi gian thuc va so thich da biet cua chu nha."""
-    prompt = SYSTEM_PROMPT + f"\nBay gio la {_now_text()}."
-    prefs = memory.as_text()
-    if prefs:
-        prompt += f"\nSo thich da biet cua chu nha: {prefs}. Hay luu y khi tra loi va goi y."
+    """Phan system TINH (khong doi giua cac luot) de model cache lai prefix, prefill nhanh hon.
+
+    Thoi gian va so thich (thay doi theo luot) khong de o day ma chen sat cau hoi (_runtime_context).
+    """
+    prompt = SYSTEM_PROMPT
     if not config.ENABLE_THINKING:
         prompt += " /no_think"  # tat suy nghi cua qwen3 de tra loi nhanh hon
     return prompt
+
+
+def _runtime_context():
+    """Ngu canh thay doi theo luot: thoi gian thuc + so thich da biet. Dat sat cau hoi de phan
+    dau (system + tools) on dinh, giup model tai su dung cache va prefill nhanh hon."""
+    text = f"Bay gio la {_now_text()}."
+    prefs = memory.as_text()
+    if prefs:
+        text += f" So thich da biet cua chu nha: {prefs}. Hay luu y khi tra loi va goi y."
+    return text
+
+
+def _build_messages(user_message, history):
+    """Ghep messages: system tinh o dau, lich su, roi ngu canh dong ngay truoc cau hoi."""
+    return (
+        [{"role": "system", "content": _system()}]
+        + (history or [])
+        + [{"role": "system", "content": _runtime_context()},
+           {"role": "user", "content": user_message}]
+    )
 
 
 def _history_after(history, user_message, reply):
@@ -138,9 +152,7 @@ def _history_after(history, user_message, reply):
 def chat(user_message, history=None):
     """Mot luot, khong stream. Tra ve (cau_tra_loi, lich_su_moi). Dung cho API."""
     history = history or []
-    messages = [{"role": "system", "content": _system()}] + history + [
-        {"role": "user", "content": user_message}
-    ]
+    messages = _build_messages(user_message, history)
 
     for _ in range(MAX_STEPS):
         try:
@@ -177,9 +189,7 @@ def chat(user_message, history=None):
 def chat_stream(user_message, history=None):
     """Mot luot, stream tung doan chu. Yield cac chuoi. Caller tu gom de luu lich su."""
     history = history or []
-    messages = [{"role": "system", "content": _system()}] + history + [
-        {"role": "user", "content": user_message}
-    ]
+    messages = _build_messages(user_message, history)
 
     for _ in range(MAX_STEPS):
         content_parts = []
@@ -239,6 +249,8 @@ def chat_stream(user_message, history=None):
 
 
 def main():
+    print("Dang khoi dong, nap model vao bo nho...", flush=True)
+    llm.warm_up()  # nap san model de cau hoi dau tien khong bi tre
     print("Quan gia Home Smart Assistant. Go 'exit' de thoat.\n")
     history = []
     while True:

@@ -200,16 +200,22 @@ TOOLS = [
         }, "required": ["device", "temperature"]}}},
     {"type": "function", "function": {
         "name": "get_home_state",
-        "description": "Lay trang thai hien tai cua tat ca thiet bi trong nha.",
+        "description": "Lay trang thai BAT/TAT cua thiet bi (den, quat, dieu hoa) CHI khi can de "
+                       "dua mot goi y dieu khien. KHONG dung cho su co mang/router hay cau hoi cach "
+                       "khac phuc — truong hop do dung search_knowledge.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "get_environment",
-        "description": "Lay chi so moi truong hien tai: nhiet do, do am, chat luong khong khi, do sang.",
+        "description": "Lay chi so moi truong trong nha (nhiet do, do am, chat luong khong khi, do "
+                       "sang) CHI khi can cho mot goi y. KHONG dung cho su co mang/router hay cau hoi "
+                       "cach lam — truong hop do dung search_knowledge.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "search_knowledge",
-        "description": "Tra cuu tai lieu, huong dan, kich ban trong nha va tin tuc moi nhat "
-                       "(kho tin duoc cap nhat moi sang) de tra loi cau hoi kien thuc hoac thoi su.",
+        "description": "Tra cuu tai lieu, huong dan trong nha va tin tuc de tra loi cau hoi kien thuc, "
+                       "cach lam, va cach khac phuc su co (router/wifi/mang, thiet bi hong, dieu hoa, "
+                       "den, quat). DUNG cong cu nay cho MOI cau dang 'lam sao / xu ly the nao / cach / "
+                       "tai sao' ve nha hoac thiet bi.",
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "description": "Cau truy van can tra cuu"},
         }, "required": ["query"]}}},

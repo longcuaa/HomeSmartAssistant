@@ -190,8 +190,11 @@ def control_device(device, state=None, temperature=None):
 
 
 def get_status():
-    """Trang thai thiet bi + chi so moi truong, gop mot lan (gop get_home_state/get_environment)."""
-    return f"Thiet bi -> {get_home_state()}. Moi truong -> {get_environment()}."
+    """Trang thai thiet bi + chi so moi truong, gop mot lan (gop get_home_state/get_environment).
+
+    Ket qua noi thang cho chu nha (get_status nam trong DIRECT_REPLY_TOOLS) nen viet de doc.
+    """
+    return f"Thiet bi trong nha: {get_home_state()}. Moi truong: {get_environment()}."
 
 
 def remember(info):

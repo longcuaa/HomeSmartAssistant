@@ -46,7 +46,9 @@ SYSTEM_PROMPT = (
 
 MAX_STEPS = 5
 # Lenh dieu khien tra ve cau xac nhan san, noi thang duoc, khong can model dien dat lai.
-DIRECT_REPLY_TOOLS = {"control_device"}
+# Cong cu co ket qua ĐÃ la cau tra loi tu nhien -> tra thang, bo luot goi model thu 2
+# (nhanh gap doi cho cau hoi do, va tranh model nho dien dat sai du lieu).
+DIRECT_REPLY_TOOLS = {"control_device", "get_calendar", "get_weather", "get_status"}
 
 # Model bat che do suy nghi (vi du qwen3) sinh ra khoi <think>...</think>. Quan gia khong duoc
 # noi phan suy nghi noi bo ra cho chu nha, nen ta loc bo truoc khi tra ve.

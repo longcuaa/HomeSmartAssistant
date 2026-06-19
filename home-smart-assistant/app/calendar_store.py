@@ -58,6 +58,6 @@ def as_text():
     else:
         parts.append("Hom nay khong co lich")
     if upcoming:
-        nxt = upcoming[0]  # da sap xep tang dan
-        parts.append(f"Sap toi {nxt['date']}: {_fmt(nxt)}")
+        # Hien TAT CA su kien sap toi (toi da 5) de khong bo sot, da sap xep tang dan.
+        parts.append("Sap toi: " + "; ".join(f"{e['date']} {_fmt(e)}".strip() for e in upcoming[:5]))
     return ". ".join(parts)

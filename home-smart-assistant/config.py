@@ -16,6 +16,9 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 ENABLE_THINKING = os.getenv("ENABLE_THINKING", "false").lower() in ("1", "true", "yes")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))  # gioi han do dai cau tra loi cho nhanh va gon
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))  # giay; tranh treo lau khi model phan hoi cham
+# Nhiet do sinh: de THAP cho goi cong cu on dinh va tra loi nhat quan. Mac dinh Ollama (~0.8)
+# khien model hay "ke ra y dinh" thay vi goi cong cu that -> dat thap de tool calling dang tin cay.
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 
 # Toi uu rieng cho Ollama (local). Khi chuyen sang vLLM tren AWS dat OLLAMA_TUNING=false
 # de khong gui cac truong rieng cua Ollama (keep_alive, options) lam vLLM bao loi.

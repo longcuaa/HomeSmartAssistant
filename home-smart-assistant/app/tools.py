@@ -93,10 +93,24 @@ def set_temperature(device, temperature):
     return f"Khong gui duoc lenh toi {device}."
 
 
+def _format_state(state):
+    """Chuyen trang thai thiet bi thanh chuoi de model doc de hieu (tranh bat model tu parse JSON)."""
+    parts = []
+    for name, st in state.items():
+        if isinstance(st, dict):
+            status = "bat" if st.get("on") else "tat"
+            if "temp" in st:
+                status += f", {st['temp']} do"
+        else:
+            status = str(st)
+        parts.append(f"{name}: {status}")
+    return "; ".join(parts) if parts else "Khong co thiet bi nao."
+
+
 def get_home_state():
     """Trang thai thiet bi: doc tu broker, fall back ve HOME dict khi gia lap hoac chua co du lieu."""
     if hub.simulated():
-        return json.dumps(HOME, ensure_ascii=False)
+        return _format_state(HOME)
     state = {}
     for name in HOME:
         raw = hub.read_sensor(f"home/devices/{name}/state", timeout=_READ_TIMEOUT)
@@ -107,16 +121,19 @@ def get_home_state():
             state[name] = json.loads(raw)  # giu nguyen object trang thai day du
         except (json.JSONDecodeError, ValueError):
             state[name] = raw.strip()
-    return json.dumps(state, ensure_ascii=False)
+    return _format_state(state)
 
 
 def get_environment():
     """Chi so moi truong: doc tung cam bien qua MQTT, fall back ve gia tri gia lap khi thieu."""
-    env = {}
+    labels = {"nhiet_do": "nhiet do", "do_am": "do am",
+              "chat_luong_khong_khi": "chat luong khong khi", "do_sang": "do sang"}
+    parts = []
     for key, topic in _SENSOR_TOPICS.items():
         raw = hub.read_sensor(topic, timeout=_READ_TIMEOUT)
-        env[key] = _parse_value(raw) if raw is not None else SENSORS[key]
-    return json.dumps(env, ensure_ascii=False)
+        value = _parse_value(raw) if raw is not None else SENSORS[key]
+        parts.append(f"{labels.get(key, key)}: {value}")
+    return "; ".join(parts)
 
 
 def search_knowledge(query):
@@ -200,15 +217,16 @@ TOOLS = [
         }, "required": ["device", "temperature"]}}},
     {"type": "function", "function": {
         "name": "get_home_state",
-        "description": "Lay trang thai BAT/TAT cua thiet bi (den, quat, dieu hoa) CHI khi can de "
-                       "dua mot goi y dieu khien. KHONG dung cho su co mang/router hay cau hoi cach "
-                       "khac phuc — truong hop do dung search_knowledge.",
+        "description": "Xem TRANG THAI hien tai cua thiet bi trong nha (bat/tat, nhiet do dieu hoa). "
+                       "GOI cong cu nay khi chu nha hoi ve tinh trang thiet bi, vi du 'den phong khach "
+                       "co dang bat khong', 'nha co thiet bi gi', 'dieu hoa dang bao nhieu do'. Day la "
+                       "nguon du lieu thiet bi that — hay goi de lay, dung doan.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "get_environment",
-        "description": "Lay chi so moi truong trong nha (nhiet do, do am, chat luong khong khi, do "
-                       "sang) CHI khi can cho mot goi y. KHONG dung cho su co mang/router hay cau hoi "
-                       "cach lam — truong hop do dung search_knowledge.",
+        "description": "Xem chi so moi truong trong nha hien tai: nhiet do, do am, chat luong khong "
+                       "khi, do sang. GOI khi chu nha hoi ve cac chi so nay (vi du 'trong nha bao nhieu "
+                       "do', 'khong khi the nao').",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "search_knowledge",

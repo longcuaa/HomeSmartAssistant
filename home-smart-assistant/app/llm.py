@@ -72,6 +72,7 @@ def chat(messages, tools=None, stream=False):
         "messages": messages,
         "stream": stream,
         "max_tokens": config.MAX_TOKENS,
+        "temperature": config.TEMPERATURE,
     }
     if tools:
         kwargs["tools"] = tools

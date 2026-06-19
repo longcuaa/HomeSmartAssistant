@@ -69,7 +69,12 @@ _THINK_RE = re.compile(re.escape(_THINK_OPEN) + r".*?" + re.escape(_THINK_CLOSE)
 
 def _strip_think(text):
     """Bo het khoi suy nghi khoi mot chuoi hoan chinh (dung cho ban khong stream)."""
-    return _THINK_RE.sub("", text or "").strip()
+    text = _THINK_RE.sub("", text or "")
+    # Bo ca khoi <think> CHUA dong (model suy nghi dai bi cat ngang vi het token).
+    i = text.find(_THINK_OPEN)
+    if i != -1:
+        text = text[:i]
+    return text.strip()
 
 
 class _ThinkFilter:
@@ -172,6 +177,9 @@ def chat(user_message, history=None):
 
         if not msg.tool_calls:
             reply = _strip_think(msg.content)
+            if not reply:
+                # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
+                reply = "Xin loi, anh chi hoi lai giup toi duoc khong a?"
             return reply, _history_after(history, user_message, reply)
 
         messages.append({
@@ -205,6 +213,7 @@ def chat_stream(user_message, history=None):
         content_parts = []
         calls = {}
         tf = _ThinkFilter()
+        produced = False  # da phat duoc chu nao cho chu nha chua (de khong im lang hoan toan)
         try:
             for chunk in llm.chat(messages, tools=tools.TOOLS, stream=True):
                 delta = chunk.choices[0].delta
@@ -212,6 +221,7 @@ def chat_stream(user_message, history=None):
                     content_parts.append(delta.content)
                     visible = tf.feed(delta.content)
                     if visible:
+                        produced = True
                         yield visible
                 for tcd in (delta.tool_calls or []):
                     idx = tcd.index if tcd.index is not None else 0
@@ -228,9 +238,13 @@ def chat_stream(user_message, history=None):
 
         tail = tf.flush()
         if tail:
+            produced = True
             yield tail
 
         if not calls:
+            if not produced:
+                # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
+                yield "Xin loi, anh chi hoi lai giup toi duoc khong a?"
             return  # da stream xong cau tra loi cuoi
 
         payload = []

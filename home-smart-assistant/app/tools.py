@@ -128,11 +128,12 @@ def get_environment():
     """Chi so moi truong: doc tung cam bien qua MQTT, fall back ve gia tri gia lap khi thieu."""
     labels = {"nhiet_do": "nhiet do", "do_am": "do am",
               "chat_luong_khong_khi": "chat luong khong khi", "do_sang": "do sang"}
+    units = {"nhiet_do": " do C", "do_am": "%", "do_sang": " lux"}
     parts = []
     for key, topic in _SENSOR_TOPICS.items():
         raw = hub.read_sensor(topic, timeout=_READ_TIMEOUT)
         value = _parse_value(raw) if raw is not None else SENSORS[key]
-        parts.append(f"{labels.get(key, key)}: {value}")
+        parts.append(f"{labels.get(key, key)}: {value}{units.get(key, '')}")
     return "; ".join(parts)
 
 
@@ -168,15 +169,41 @@ def add_event(date, time="", title=""):
     return calendar_store.add(date, time, title)
 
 
+# --- Cong cu GOP: it cong cu hon de model nho (3b) chon dung hon va prefill nhe hon.
+# Cac ham turn_on_device/turn_off_device/set_temperature/get_home_state/get_environment o tren
+# duoc giu lai lam ham noi bo, goi qua cac ham gop nay. ---
+
+def control_device(device, state=None, temperature=None):
+    """Dieu khien thiet bi: bat/tat va/hoac dat nhiet do (gop turn_on/turn_off/set_temperature)."""
+    if device not in HOME:
+        return f"Khong tim thay thiet bi '{device}'."
+    if temperature is not None:
+        return set_temperature(device, temperature)
+    if state is None:
+        return "Can cho biet bat hay tat thiet bi."
+    s = str(state).strip().lower()
+    if s in ("on", "bat", "mo", "true", "1"):
+        return turn_on_device(device)
+    if s in ("off", "tat", "dong", "false", "0"):
+        return turn_off_device(device)
+    return f"Trang thai '{state}' khong hop le (chi 'on' hoac 'off')."
+
+
+def get_status():
+    """Trang thai thiet bi + chi so moi truong, gop mot lan (gop get_home_state/get_environment)."""
+    return f"Thiet bi -> {get_home_state()}. Moi truong -> {get_environment()}."
+
+
+def remember(info):
+    """Ghi nho thong tin ve chu nha/ngoi nha (gop remember_preference/remember_fact)."""
+    return memory.add_fact(info)
+
+
 _REGISTRY = {
-    "turn_on_device": turn_on_device,
-    "turn_off_device": turn_off_device,
-    "set_temperature": set_temperature,
-    "get_home_state": get_home_state,
-    "get_environment": get_environment,
+    "control_device": control_device,
+    "get_status": get_status,
     "search_knowledge": search_knowledge,
-    "remember_preference": remember_preference,
-    "remember_fact": remember_fact,
+    "remember": remember,
     "get_weather": get_weather,
     "get_calendar": get_calendar,
     "add_event": add_event,
@@ -197,36 +224,18 @@ def execute(name, arguments):
 # Mo ta cong cu theo chuan OpenAI tool calling
 TOOLS = [
     {"type": "function", "function": {
-        "name": "turn_on_device",
-        "description": "Bat mot thiet bi trong nha nhu den, quat, dieu hoa.",
+        "name": "control_device",
+        "description": "Dieu khien thiet bi trong nha (den, quat, dieu hoa): bat, tat, hoac dat nhiet do.",
         "parameters": {"type": "object", "properties": {
             "device": {"type": "string", "description": "Ten thiet bi, vi du 'den phong khach'"},
+            "state": {"type": "string", "enum": ["on", "off"], "description": "Bat (on) hay tat (off)"},
+            "temperature": {"type": "integer", "description": "Nhiet do do C (chi cho dieu hoa)"},
         }, "required": ["device"]}}},
     {"type": "function", "function": {
-        "name": "turn_off_device",
-        "description": "Tat mot thiet bi trong nha.",
-        "parameters": {"type": "object", "properties": {
-            "device": {"type": "string", "description": "Ten thiet bi"},
-        }, "required": ["device"]}}},
-    {"type": "function", "function": {
-        "name": "set_temperature",
-        "description": "Dat nhiet do cho thiet bi co dieu chinh nhiet nhu dieu hoa.",
-        "parameters": {"type": "object", "properties": {
-            "device": {"type": "string", "description": "Ten thiet bi"},
-            "temperature": {"type": "integer", "description": "Nhiet do tinh bang do C"},
-        }, "required": ["device", "temperature"]}}},
-    {"type": "function", "function": {
-        "name": "get_home_state",
-        "description": "Xem TRANG THAI hien tai cua thiet bi trong nha (bat/tat, nhiet do dieu hoa). "
-                       "GOI cong cu nay khi chu nha hoi ve tinh trang thiet bi, vi du 'den phong khach "
-                       "co dang bat khong', 'nha co thiet bi gi', 'dieu hoa dang bao nhieu do'. Day la "
-                       "nguon du lieu thiet bi that — hay goi de lay, dung doan.",
-        "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {
-        "name": "get_environment",
-        "description": "Xem chi so moi truong trong nha hien tai: nhiet do, do am, chat luong khong "
-                       "khi, do sang. GOI khi chu nha hoi ve cac chi so nay (vi du 'trong nha bao nhieu "
-                       "do', 'khong khi the nao').",
+        "name": "get_status",
+        "description": "Xem tinh trang hien tai trong nha: thiet bi nao dang bat/tat, nhiet do dieu hoa, "
+                       "va chi so moi truong (nhiet do, do am, khong khi, do sang). GOI khi chu nha hoi "
+                       "ve tinh trang thiet bi hoac moi truong; lay du lieu that, dung doan.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "search_knowledge",
@@ -238,18 +247,12 @@ TOOLS = [
             "query": {"type": "string", "description": "Cau truy van can tra cuu"},
         }, "required": ["query"]}}},
     {"type": "function", "function": {
-        "name": "remember_preference",
-        "description": "Ghi nho mot so thich cua chu nha de ca nhan hoa goi y lan sau.",
+        "name": "remember",
+        "description": "Ghi nho thong tin chu nha noi ro: so thich, thoi quen, hoac thong tin co dinh "
+                       "ve nha/gia dinh (ten phong, thanh vien...).",
         "parameters": {"type": "object", "properties": {
-            "preference": {"type": "string", "description": "So thich, vi du thich de dieu hoa 25 do vao ban dem"},
-        }, "required": ["preference"]}}},
-    {"type": "function", "function": {
-        "name": "remember_fact",
-        "description": "Ghi nho thong tin co dinh ve ngoi nha hoac gia dinh, vi du ten phong, "
-                       "thanh vien, thoi quen sinh hoat.",
-        "parameters": {"type": "object", "properties": {
-            "fact": {"type": "string", "description": "Thong tin can ghi nho, vi du 'phong ngu chinh o tang 2'"},
-        }, "required": ["fact"]}}},
+            "info": {"type": "string", "description": "Thong tin can ghi nho"},
+        }, "required": ["info"]}}},
     {"type": "function", "function": {
         "name": "get_weather",
         "description": "Lay thoi tiet ngoai troi hien tai va du bao hom nay: nhiet do, do am, tinh "

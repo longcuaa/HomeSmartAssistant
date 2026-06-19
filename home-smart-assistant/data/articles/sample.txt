@@ -1,0 +1,7 @@
+Hướng dẫn nhanh thiết bị trong nhà (file mẫu, có thể xóa)
+
+Điều hòa nên để ở khoảng 26 độ C để vừa tiết kiệm điện vừa đủ mát. Khi router wifi
+bị lỗi mạng, hãy rút nguồn router chờ 30 giây rồi cắm lại, đèn tín hiệu sẽ ổn định
+sau khoảng một phút. Đèn phòng khách và đèn phòng ngủ đều có thể điều khiển bằng
+giọng nói. Quạt phòng khách nên bật ở mức thấp vào ban đêm. Nếu mất điện đột ngột,
+các thiết bị sẽ tự khởi động lại khi có điện trở lại.

@@ -1,0 +1,12 @@
+openai>=1.30
+chromadb>=0.5
+pypdf>=4.0
+watchdog>=4.0
+fastapi>=0.110
+uvicorn>=0.29
+python-dotenv>=1.0
+trafilatura>=1.8
+beautifulsoup4>=4.12
+requests>=2.31
+apscheduler>=3.10
+paho-mqtt>=2.0

@@ -234,12 +234,13 @@ def _fast_path(message):
     # 1) Dang cho phan hoi cho mot lenh truoc do?
     if _PENDING["action"]:
         act = _PENDING["action"]
-        if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho) -> chon xong lam luon
+        if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho)
             picked = [k for k in _PENDING["candidates"]
                       if set(w for w in tools._norm(k).split() if w != "phong") & words]
-            if len(picked) == 1:
-                _clear_pending()
-                return tools.control_device(picked[0], act)
+            if len(picked) == 1:                         # chon xong -> van hoi xac nhan lan cuoi
+                verb = "bật" if act == "on" else "tắt"
+                _PENDING.update(action=act, device=picked[0], candidates=None)
+                return f"Bạn có chắc muốn {verb} {picked[0]} không?"
         else:                                            # cho xac nhan co/khong
             if _DENY_RE.search(m):
                 _clear_pending()

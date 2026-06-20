@@ -188,6 +188,40 @@ def _cache_put(message, reply, used_tools):
         _RESP_CACHE.pop(next(iter(_RESP_CACHE)))  # bo muc cu nhat
 
 
+# --- Duong tat (fast-path): y dinh thiet bi RO RANG -> tra loi TUC THI, KHONG goi LLM.
+# Du lieu thiet bi nam san trong HOME nen khong can model -> phan hoi gan nhu 0ms cho voice.
+_ON_RE = re.compile(r"\b(bat|mo|khoi dong)\b")
+_OFF_RE = re.compile(r"\b(tat|ngat)\b")
+_STATUS_RE = re.compile(r"(thiet bi gi|bao nhieu thiet bi|co thiet bi|nhung thiet bi|"
+                        r"liet ke thiet bi|trang thai thiet bi|trang thai nha|trang thai trong nha)")
+_ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
+                     r"do sang trong nha|chi so moi truong)")
+
+
+def _fast_path(message):
+    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi ro rang. Tra None -> de LLM xu ly."""
+    m = tools._norm(message)
+    if not m:
+        return None
+    # Khop thiet bi MEM theo tu: tat ca tu dac trung cua ten (bo 'phong') deu co trong cau.
+    # Nho vay 'den bep' khop 'den phong bep'; con 'den phong khach' (thieu 'tran'/'led') -> mo ho, bo qua.
+    words = set(m.split())
+    devices = []
+    for k in tools.HOME:
+        kw = [w for w in tools._norm(k).split() if w != "phong"]
+        if kw and all(w in words for w in kw):
+            devices.append(k)
+    on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
+    # Dieu khien: chi khi DUNG 1 thiet bi + DUNG 1 hanh dong + khong co so (nhiet do -> de LLM lo).
+    if len(devices) == 1 and (on ^ off) and not re.search(r"\d", m):
+        return tools.control_device(devices[0], "on" if on else "off")
+    if _STATUS_RE.search(m):
+        return tools.get_status()
+    if _ENV_RE.search(m):
+        return tools.get_environment()
+    return None
+
+
 def _stream_pieces(text):
     """Cat chuoi CO SAN (vd ket qua cong cu tra thang) thanh tung tu de stream ra dan,
     cho cam giac real-time thay vi hien nguyen cuc mot lan."""
@@ -234,6 +268,9 @@ def chat(user_message, history=None):
     cached = _cache_get(user_message)
     if cached is not None:
         return cached, _history_after(history, user_message, cached)  # du lieu khong doi -> tra ngay
+    fast = _fast_path(user_message)
+    if fast is not None:
+        return fast, _history_after(history, user_message, fast)  # y dinh ro rang -> tra ngay, khong goi LLM
     messages = _build_messages(user_message, history)
     used = set()
 
@@ -285,6 +322,11 @@ def chat_stream(user_message, history=None):
     if cached is not None:
         for piece in _stream_pieces(cached):
             yield piece  # du lieu khong doi -> tra cache ngay, van stream tung tu cho dong nhat
+        return
+    fast = _fast_path(user_message)
+    if fast is not None:
+        for piece in _stream_pieces(fast):
+            yield piece  # y dinh ro rang -> tra ngay, khong goi LLM
         return
     messages = _build_messages(user_message, history)
     used = set()
@@ -372,6 +414,10 @@ def warm_up():
         pass
     try:
         llm.embed("xin chao")  # nap luon model embedding cho search_knowledge dau tien
+    except Exception:
+        pass
+    try:
+        tools.get_status()  # cham broker MQTT 1 lan (cache che do gia lap) -> lenh thiet bi dau khong tre
     except Exception:
         pass
 

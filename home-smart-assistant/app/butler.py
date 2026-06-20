@@ -157,6 +157,46 @@ def _history_after(history, user_message, reply):
     ]
 
 
+def _stream_pieces(text):
+    """Cat chuoi CO SAN (vd ket qua cong cu tra thang) thanh tung tu de stream ra dan,
+    cho cam giac real-time thay vi hien nguyen cuc mot lan."""
+    buf = ""
+    for ch in text:
+        buf += ch
+        if ch in " \n":
+            yield buf
+            buf = ""
+    if buf:
+        yield buf
+
+
+# Dau ket cau de tach cau cho TTS (gom ca ';' de doc danh sach thiet bi ngat tung muc).
+_SENT_END_RE = re.compile(r"[.!?;\n]+")
+
+
+def stream_sentences(pieces):
+    """Gom luong token (tu chat_stream) thanh tung CAU hoan chinh roi yield ngay.
+
+    Dung cho text-to-speech: TTS doc cau dau ngay khi xong, trong khi model con dang sinh cau
+    sau -> 'tieng noi dau tien' phat ra som nhat. Vi du:
+        for cau in butler.stream_sentences(butler.chat_stream(q, history)):
+            tts_noi(cau)
+    """
+    buf = ""
+    for p in pieces:
+        buf += p
+        while True:
+            m = _SENT_END_RE.search(buf)
+            if not m:
+                break
+            sent = buf[:m.end()].strip()
+            buf = buf[m.end():]
+            if sent:
+                yield sent
+    if buf.strip():
+        yield buf.strip()
+
+
 def chat(user_message, history=None):
     """Mot luot, khong stream. Tra ve (cau_tra_loi, lich_su_moi). Dung cho API."""
     history = history or []
@@ -262,7 +302,8 @@ def chat_stream(user_message, history=None):
             messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
 
         if results and all(name in DIRECT_REPLY_TOOLS for name, _ in results):
-            yield " ".join(r for _, r in results)
+            for piece in _stream_pieces(" ".join(r for _, r in results)):
+                yield piece  # stream tung tu de hien dan, khong hien nguyen cuc
             return
         # nguoc lai: vong sau se stream cau tra loi dien dat tu ket qua cong cu
 

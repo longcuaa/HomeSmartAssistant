@@ -310,9 +310,23 @@ def chat_stream(user_message, history=None):
     yield "Xin loi, toi chua xu ly duoc yeu cau nay."
 
 
+def warm_up():
+    """Lam nong luc khoi dong: goi MOT luot that (du system + tools) de Ollama vua nap model VUA
+    cache san prefix [system + tools]. Nho vay cau hoi DAU TIEN cua nguoi dung khong ton ~5s
+    prefill prompt lon tren GPU yeu. Khong bao gio nem loi."""
+    try:
+        llm.chat(_build_messages("xin chao", []), tools=tools.TOOLS)
+    except Exception:
+        pass
+    try:
+        llm.embed("xin chao")  # nap luon model embedding cho search_knowledge dau tien
+    except Exception:
+        pass
+
+
 def main():
-    print("Dang khoi dong, nap model vao bo nho...", flush=True)
-    llm.warm_up()  # nap san model de cau hoi dau tien khong bi tre
+    print("Dang khoi dong, nap model va lam nong prompt...", flush=True)
+    warm_up()  # nap model + cache prefix de cau hoi dau tien khong bi tre
     print("Quan gia Home Smart Assistant. Go 'exit' de thoat.\n")
     history = []
     while True:

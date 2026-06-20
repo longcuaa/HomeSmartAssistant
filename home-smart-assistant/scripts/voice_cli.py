@@ -29,8 +29,8 @@ def speak(text):
 
 
 def main():
-    print("Dang nap model...", flush=True)
-    llm.warm_up()
+    print("Dang nap model va lam nong prompt...", flush=True)
+    butler.warm_up()  # nap model + cache prefix [system+tools] -> cau dau khong ton ~5s prefill
     print("San sang. Go cau hoi ('thoat' de thoat).\n", flush=True)
     history = []
     while True:

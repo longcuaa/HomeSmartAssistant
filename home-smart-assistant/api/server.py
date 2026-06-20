@@ -21,7 +21,7 @@ _sched = None
 @asynccontextmanager
 async def lifespan(app):
     global _sched
-    llm.warm_up()  # nap san model luc khoi dong de request dau tien khong bi tre
+    butler.warm_up()  # nap model + cache prefix [system+tools] de request dau tien khong bi tre
     _sched = scheduler.start_background()
     yield
     if _sched:

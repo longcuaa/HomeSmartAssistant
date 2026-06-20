@@ -235,12 +235,14 @@ def _fast_path(message):
     if _PENDING["action"]:
         act = _PENDING["action"]
         if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho)
-            picked = [k for k in _PENDING["candidates"]
-                      if set(w for w in tools._norm(k).split() if w != "phong") & words]
-            if len(picked) == 1:                         # chon xong -> van hoi xac nhan lan cuoi
-                verb = "bật" if act == "on" else "tắt"
-                _PENDING.update(action=act, device=picked[0], candidates=None)
-                return f"Bạn có chắc muốn {verb} {picked[0]} không?"
+            matched = [k for k in _PENDING["candidates"] if k in set(_match_devices(words))]
+            verb = "bật" if act == "on" else "tắt"
+            if len(matched) == 1:                        # da ro -> hoi xac nhan lan cuoi
+                _PENDING.update(action=act, device=matched[0], candidates=None)
+                return f"Bạn có chắc muốn {verb} {matched[0]} không?"
+            if matched:                                  # van con nhieu -> hoi lai trong so do
+                _PENDING["candidates"] = matched
+                return f"Bạn muốn {verb} thiết bị nào: {', '.join(matched)}?"
         else:                                            # cho xac nhan co/khong
             if _DENY_RE.search(m):
                 _clear_pending()
@@ -251,7 +253,30 @@ def _fast_path(message):
                 return tools.control_device(dev, act)
         _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
 
-    # 2) Lenh dieu khien -> HOI XAC NHAN truoc khi lam (khong kem nhiet do -> de LLM lo)
+    # 2) CAU HOI ve so luong / trang thai -> tra ngay, KHONG coi la lenh (du cau co tu 'bat/tat').
+    # Phai xet TRUOC phan dieu khien de 'may cai den dang bat' khong bi hieu nham la lenh bat.
+    asking_count = bool(re.search(r"\b(may|bao nhieu)\b", m))
+    asking_on = "dang bat" in m
+    asking_off = "dang tat" in m
+    if asking_count or asking_on or asking_off:
+        cands = _match_devices(words)
+        pool = cands if cands else list(tools.HOME)
+        if asking_on:                              # 'may cai den dang bat' -> dem cai DANG BAT
+            lst = [k for k in pool if isinstance(tools.HOME[k], dict) and tools.HOME[k].get("on")]
+            return f"Có {len(lst)} thiết bị đang bật" + (f": {', '.join(lst)}." if lst else ".")
+        if asking_off:
+            lst = [k for k in pool if not (isinstance(tools.HOME[k], dict) and tools.HOME[k].get("on"))]
+            return f"Có {len(lst)} thiết bị đang tắt" + (f": {', '.join(lst)}." if lst else ".")
+        if cands:                                  # 'may dieu hoa', 'bao nhieu den' -> dem theo loai
+            return f"Trong nhà có {len(cands)} thiết bị: {', '.join(cands)}."
+        return tools.get_status()                  # 'bao nhieu thiet bi' chung chung
+
+    if _STATUS_RE.search(m):
+        return tools.get_status()
+    if _ENV_RE.search(m):
+        return tools.get_environment()
+
+    # 3) LENH dieu khien (chi khi KHONG phai cau hoi) -> hoi xac nhan truoc khi lam
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
     if (on ^ off) and not re.search(r"\d", m):
         cands = _match_devices(words)
@@ -263,19 +288,6 @@ def _fast_path(message):
         if len(cands) > 1:
             _PENDING.update(action=act, device=None, candidates=cands)
             return f"Bạn muốn {verb} thiết bị nào: {', '.join(cands)}?"
-
-    # 2.5) Hoi SO LUONG theo loai thiet bi: "co may dieu hoa", "bao nhieu den", "co may quat"
-    # -> dem CHINH XAC tu HOME, khong de LLM doan.
-    if re.search(r"\b(may|bao nhieu)\b", m):
-        cands = _match_devices(words)
-        if cands:
-            return f"Trong nhà có {len(cands)} thiết bị: {', '.join(cands)}."
-
-    # 3) Hoi trang thai / moi truong (khong can xac nhan)
-    if _STATUS_RE.search(m):
-        return tools.get_status()
-    if _ENV_RE.search(m):
-        return tools.get_environment()
     return None
 
 

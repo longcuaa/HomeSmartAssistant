@@ -263,6 +263,13 @@ def _fast_path(message):
             _PENDING.update(action=act, device=None, candidates=cands)
             return f"Bạn muốn {verb} thiết bị nào: {', '.join(cands)}?"
 
+    # 2.5) Hoi SO LUONG theo loai thiet bi: "co may dieu hoa", "bao nhieu den", "co may quat"
+    # -> dem CHINH XAC tu HOME, khong de LLM doan.
+    if re.search(r"\b(may|bao nhieu)\b", m):
+        cands = _match_devices(words)
+        if cands:
+            return f"Trong nhà có {len(cands)} thiết bị: {', '.join(cands)}."
+
     # 3) Hoi trang thai / moi truong (khong can xac nhan)
     if _STATUS_RE.search(m):
         return tools.get_status()

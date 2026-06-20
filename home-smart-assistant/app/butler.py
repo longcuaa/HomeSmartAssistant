@@ -199,22 +199,28 @@ _ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
 
 
 def _fast_path(message):
-    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi ro rang. Tra None -> de LLM xu ly."""
+    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi ro rang. Tra None -> de LLM xu ly.
+
+    Dieu khien: tim thiet bi qua cac tu thiet bi nguoi dung noi (vd 'dieu hoa', 'den bep').
+    - Khop dung 1 thiet bi -> lam ngay.
+    - Khop NHIEU thiet bi (vd 'tat dieu hoa' ma co 2 dieu hoa) -> HOI LAI muon cai nao.
+    """
     m = tools._norm(message)
     if not m:
         return None
-    # Khop thiet bi MEM theo tu: tat ca tu dac trung cua ten (bo 'phong') deu co trong cau.
-    # Nho vay 'den bep' khop 'den phong bep'; con 'den phong khach' (thieu 'tran'/'led') -> mo ho, bo qua.
     words = set(m.split())
-    devices = []
-    for k in tools.HOME:
-        kw = [w for w in tools._norm(k).split() if w != "phong"]
-        if kw and all(w in words for w in kw):
-            devices.append(k)
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
-    # Dieu khien: chi khi DUNG 1 thiet bi + DUNG 1 hanh dong + khong co so (nhiet do -> de LLM lo).
-    if len(devices) == 1 and (on ^ off) and not re.search(r"\d", m):
-        return tools.control_device(devices[0], "on" if on else "off")
+    if (on ^ off) and not re.search(r"\d", m):  # co hanh dong bat/tat ro rang, khong kem nhiet do
+        keyw = {k: set(w for w in tools._norm(k).split() if w != "phong") for k in tools.HOME}
+        all_dev_words = set().union(*keyw.values()) if keyw else set()
+        said = words & all_dev_words            # cac tu chi thiet bi ma nguoi dung da noi
+        if said:
+            cands = [k for k, kw in keyw.items() if said <= kw]  # thiet bi khop het cac tu da noi
+            if len(cands) == 1:
+                return tools.control_device(cands[0], "on" if on else "off")
+            if len(cands) > 1:                  # mo ho -> hoi lai cho chinh xac
+                return (f"Bạn muốn {'bật' if on else 'tắt'} thiết bị nào: "
+                        f"{', '.join(cands)}?")
     if _STATUS_RE.search(m):
         return tools.get_status()
     if _ENV_RE.search(m):
@@ -281,13 +287,13 @@ def chat(user_message, history=None):
         try:
             msg = llm.chat(messages, tools=use_tools).choices[0].message
         except Exception:
-            return "Xin loi, he thong dang phan hoi cham, anh chi thu lai sau giay lat.", history
+            return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
             reply = _strip_think(msg.content)
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
-                reply = "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+                reply = "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
             _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
@@ -312,7 +318,7 @@ def chat(user_message, history=None):
             _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
-    return "Xin loi, toi chua xu ly duoc yeu cau nay.", history
+    return "Xin lỗi, tôi chưa xử lý được yêu cầu này.", history
 
 
 def chat_stream(user_message, history=None):
@@ -358,7 +364,7 @@ def chat_stream(user_message, history=None):
                     if tcd.function and tcd.function.arguments:
                         e["args"] += tcd.function.arguments
         except Exception:
-            yield "Xin loi, he thong dang phan hoi cham, anh chi thu lai sau giay lat."
+            yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
         tail = tf.flush()
@@ -370,7 +376,7 @@ def chat_stream(user_message, history=None):
         if not calls:
             if not produced:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
-                yield "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+                yield "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
             else:
                 _cache_put(user_message, "".join(answer), used)
             return  # da stream xong cau tra loi cuoi
@@ -401,7 +407,7 @@ def chat_stream(user_message, history=None):
             return
         # nguoc lai: vong sau se stream cau tra loi dien dat tu ket qua cong cu
 
-    yield "Xin loi, toi chua xu ly duoc yeu cau nay."
+    yield "Xin lỗi, tôi chưa xử lý được yêu cầu này."
 
 
 def warm_up():

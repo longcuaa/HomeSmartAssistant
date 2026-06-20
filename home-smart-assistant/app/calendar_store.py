@@ -54,10 +54,10 @@ def as_text():
 
     parts = []
     if today_evs:
-        parts.append("Hom nay: " + "; ".join(_fmt(e) for e in today_evs))
+        parts.append("Hôm nay: " + "; ".join(_fmt(e) for e in today_evs))
     else:
-        parts.append("Hom nay khong co lich")
+        parts.append("Hôm nay không có lịch")
     if upcoming:
         # Hien TAT CA su kien sap toi (toi da 5) de khong bo sot, da sap xep tang dan.
-        parts.append("Sap toi: " + "; ".join(f"{e['date']} {_fmt(e)}".strip() for e in upcoming[:5]))
+        parts.append("Sắp tới: " + "; ".join(f"{e['date']} {_fmt(e)}".strip() for e in upcoming[:5]))
     return ". ".join(parts)

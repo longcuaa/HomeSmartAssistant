@@ -14,23 +14,23 @@ from app import llm, vector_store, memory, device as hub, weather, calendar_stor
 # Trang thai nha gia lap, dung khi khong co broker. Thuc te doc qua MQTT.
 # Key dat ASCII khong dau theo quy uoc; ham _find_device() khop ca khi nguoi dung noi co dau.
 HOME = {
-    "den tran phong khach": {"on": False},
-    "den led phong khach": {"on": False},
-    "dieu hoa phong khach": {"on": False, "temp": 26},
-    "den phong bep": {"on": False},
-    "den phong ngu": {"on": False},
-    "quat phong ngu": {"on": False},
-    "dieu hoa phong ngu": {"on": False, "temp": 26},
-    "den phong hoc": {"on": False},
-    "quat phong hoc": {"on": False},
-    "den hanh lang": {"on": False},
+    "đèn trần phòng khách": {"on": False},
+    "đèn LED phòng khách": {"on": False},
+    "điều hòa phòng khách": {"on": False, "temp": 26},
+    "đèn phòng bếp": {"on": False},
+    "đèn phòng ngủ": {"on": False},
+    "quạt phòng ngủ": {"on": False},
+    "điều hòa phòng ngủ": {"on": False, "temp": 26},
+    "đèn phòng học": {"on": False},
+    "quạt phòng học": {"on": False},
+    "đèn hành lang": {"on": False},
 }
 
 # Gia tri cam bien gia lap, dung khi khong co cam bien that tra ve.
 SENSORS = {
     "nhiet_do": 28,
     "do_am": 65,
-    "chat_luong_khong_khi": "tot",
+    "chat_luong_khong_khi": "tốt",
     "do_sang": 300,
 }
 
@@ -83,42 +83,46 @@ def _find_device(name):
     for key in HOME:
         if _norm(key) == target:
             return key
-    return None
+    # Khop mem: tat ca tu trong 'name' nam trong ten thiet bi, va CHI DUNG 1 thiet bi khop
+    # (vd 'den bep' -> 'den phong bep'); neu mo ho (nhieu khop) thi tra None de khoi chon bua.
+    tw = set(target.split())
+    cands = [k for k in HOME if tw and tw <= set(_norm(k).split())]
+    return cands[0] if len(cands) == 1 else None
 
 
 def turn_on_device(device):
     if device not in HOME:
-        return f"Khong tim thay thiet bi '{device}'."
+        return f"Không tìm thấy thiết bị '{device}'."
     if hub.publish(_set_topic(device), {"state": "ON"}):
-        return f"Da bat {device}."
+        return f"Đã bật {device}."
     if hub.simulated():
         HOME[device]["on"] = True
-        return f"Da bat {device}. (gia lap)"
-    return f"Khong gui duoc lenh toi {device}."
+        return f"Đã bật {device}. (giả lập)"
+    return f"Không gửi được lệnh tới {device}."
 
 
 def turn_off_device(device):
     if device not in HOME:
-        return f"Khong tim thay thiet bi '{device}'."
+        return f"Không tìm thấy thiết bị '{device}'."
     if hub.publish(_set_topic(device), {"state": "OFF"}):
-        return f"Da tat {device}."
+        return f"Đã tắt {device}."
     if hub.simulated():
         HOME[device]["on"] = False
-        return f"Da tat {device}. (gia lap)"
-    return f"Khong gui duoc lenh toi {device}."
+        return f"Đã tắt {device}. (giả lập)"
+    return f"Không gửi được lệnh tới {device}."
 
 
 def set_temperature(device, temperature):
     d = HOME.get(device)
     if d is None or "temp" not in d:
-        return f"Thiet bi '{device}' khong chinh duoc nhiet do."
+        return f"Thiết bị '{device}' không chỉnh được nhiệt độ."
     if hub.publish(_set_topic(device), {"state": "ON", "temperature": temperature}):
-        return f"Da dat {device} o {temperature} do."
+        return f"Đã đặt {device} ở {temperature} độ."
     if hub.simulated():
         d["on"] = True
         d["temp"] = temperature
-        return f"Da dat {device} o {temperature} do. (gia lap)"
-    return f"Khong gui duoc lenh toi {device}."
+        return f"Đã đặt {device} ở {temperature} độ. (giả lập)"
+    return f"Không gửi được lệnh tới {device}."
 
 
 def _format_state(state):
@@ -126,13 +130,13 @@ def _format_state(state):
     parts = []
     for name, st in state.items():
         if isinstance(st, dict):
-            status = "bat" if st.get("on") else "tat"
+            status = "bật" if st.get("on") else "tắt"
             if "temp" in st:
-                status += f", {st['temp']} do"
+                status += f", {st['temp']} độ"
         else:
             status = str(st)
         parts.append(f"{name}: {status}")
-    return "; ".join(parts) if parts else "Khong co thiet bi nao."
+    return "; ".join(parts) if parts else "Không có thiết bị nào."
 
 
 def get_home_state():
@@ -154,9 +158,9 @@ def get_home_state():
 
 def get_environment():
     """Chi so moi truong: doc tung cam bien qua MQTT, fall back ve gia tri gia lap khi thieu."""
-    labels = {"nhiet_do": "nhiet do", "do_am": "do am",
-              "chat_luong_khong_khi": "chat luong khong khi", "do_sang": "do sang"}
-    units = {"nhiet_do": " do C", "do_am": "%", "do_sang": " lux"}
+    labels = {"nhiet_do": "nhiệt độ", "do_am": "độ ẩm",
+              "chat_luong_khong_khi": "chất lượng không khí", "do_sang": "độ sáng"}
+    units = {"nhiet_do": " độ C", "do_am": "%", "do_sang": " lux"}
     parts = []
     for key, topic in _SENSOR_TOPICS.items():
         raw = hub.read_sensor(topic, timeout=_READ_TIMEOUT)
@@ -189,7 +193,7 @@ def get_weather():
 def get_calendar():
     """Su kien trong lich hom nay va su kien sap toi."""
     text = calendar_store.as_text()
-    return text or "Lich hien dang trong."
+    return text or "Lịch hiện đang trống."
 
 
 def add_event(date, time="", title=""):
@@ -205,17 +209,17 @@ def control_device(device, state=None, temperature=None):
     """Dieu khien thiet bi: bat/tat va/hoac dat nhiet do (gop turn_on/turn_off/set_temperature)."""
     key = _find_device(device)
     if key is None:
-        return f"Khong tim thay thiet bi '{device}'."
+        return f"Không tìm thấy thiết bị '{device}'."
     if temperature is not None:
         return set_temperature(key, temperature)
     if state is None:
-        return "Can cho biet bat hay tat thiet bi."
+        return "Cần cho biết bật hay tắt thiết bị."
     s = str(state).strip().lower()
     if s in ("on", "bat", "mo", "true", "1"):
         return turn_on_device(key)
     if s in ("off", "tat", "dong", "false", "0"):
         return turn_off_device(key)
-    return f"Trang thai '{state}' khong hop le (chi 'on' hoac 'off')."
+    return f"Trạng thái '{state}' không hợp lệ (chỉ 'on' hoặc 'off')."
 
 
 def get_status():
@@ -223,7 +227,7 @@ def get_status():
 
     Ket qua noi thang cho chu nha (get_status nam trong DIRECT_REPLY_TOOLS) nen viet de doc.
     """
-    return f"Thiet bi trong nha: {get_home_state()}. Moi truong: {get_environment()}."
+    return f"Thiết bị trong nhà: {get_home_state()}. Môi trường: {get_environment()}."
 
 
 def remember(info):

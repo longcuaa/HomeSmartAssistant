@@ -10,19 +10,19 @@ import config
 
 _URL = "https://api.open-meteo.com/v1/forecast"
 
-# Ma thoi tiet WMO -> mo ta ngan (tieng Viet ASCII).
+# Ma thoi tiet WMO -> mo ta ngan (tieng Viet co dau cho TTS doc dung).
 _CODES = {
-    0: "quang dang",
-    1: "it may", 2: "may rai rac", 3: "nhieu may",
-    45: "suong mu", 48: "suong mu dong bang",
-    51: "mua phun nhe", 53: "mua phun", 55: "mua phun day",
-    56: "mua phun lanh", 57: "mua phun lanh day",
-    61: "mua nhe", 63: "mua", 65: "mua to",
-    66: "mua lanh", 67: "mua lanh to",
-    71: "tuyet nhe", 73: "tuyet", 75: "tuyet day", 77: "hat tuyet",
-    80: "mua rao nhe", 81: "mua rao", 82: "mua rao to",
-    85: "mua tuyet nhe", 86: "mua tuyet to",
-    95: "dong", 96: "dong kem mua da", 99: "dong manh kem mua da",
+    0: "quang đãng",
+    1: "ít mây", 2: "mây rải rác", 3: "nhiều mây",
+    45: "sương mù", 48: "sương mù đóng băng",
+    51: "mưa phùn nhẹ", 53: "mưa phùn", 55: "mưa phùn dày",
+    56: "mưa phùn lạnh", 57: "mưa phùn lạnh dày",
+    61: "mưa nhẹ", 63: "mưa", 65: "mưa to",
+    66: "mưa lạnh", 67: "mưa lạnh to",
+    71: "tuyết nhẹ", 73: "tuyết", 75: "tuyết dày", 77: "hạt tuyết",
+    80: "mưa rào nhẹ", 81: "mưa rào", 82: "mưa rào to",
+    85: "mưa tuyết nhẹ", 86: "mưa tuyết to",
+    95: "dông", 96: "dông kèm mưa đá", 99: "dông mạnh kèm mưa đá",
 }
 
 # Cache trong bo nho: thoi diem lay (monotonic) va cau ket qua.
@@ -30,7 +30,7 @@ _cache = {"t": 0.0, "text": None}
 
 
 def _desc(code):
-    return _CODES.get(code, "khong ro")
+    return _CODES.get(code, "không rõ")
 
 
 def current_text():
@@ -57,13 +57,13 @@ def current_text():
         cur = d["current"]
         daily = d["daily"]
         text = (
-            f"Thoi tiet ngoai troi: {round(cur['temperature_2m'])} do, "
-            f"do am {round(cur['relative_humidity_2m'])}%, {_desc(cur['weather_code'])}. "
-            f"Hom nay {round(daily['temperature_2m_min'][0])}-{round(daily['temperature_2m_max'][0])} do, "
+            f"Thời tiết ngoài trời: {round(cur['temperature_2m'])} độ, "
+            f"độ ẩm {round(cur['relative_humidity_2m'])}%, {_desc(cur['weather_code'])}. "
+            f"Hôm nay {round(daily['temperature_2m_min'][0])}-{round(daily['temperature_2m_max'][0])} độ, "
             f"{_desc(daily['weather_code'][0])}."
         )
         _cache["t"] = now
         _cache["text"] = text
         return text
     except Exception:
-        return "Khong lay duoc thoi tiet luc nay."
+        return "Không lấy được thời tiết lúc này."

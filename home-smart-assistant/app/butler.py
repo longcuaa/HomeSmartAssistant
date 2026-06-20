@@ -162,9 +162,12 @@ def chat(user_message, history=None):
     history = history or []
     messages = _build_messages(user_message, history)
 
-    for _ in range(MAX_STEPS):
+    for step in range(MAX_STEPS):
+        # Chi gui tools o luot DAU (de model chon cong cu). Cac luot sau chi dien dat tu ket qua
+        # cong cu -> bo tools cho prefill nhe hon, nhanh hon (nhat la duong search_knowledge 2 luot).
+        use_tools = tools.TOOLS if step == 0 else None
         try:
-            msg = llm.chat(messages, tools=tools.TOOLS).choices[0].message
+            msg = llm.chat(messages, tools=use_tools).choices[0].message
         except Exception:
             return "Xin loi, he thong dang phan hoi cham, anh chi thu lai sau giay lat.", history
 
@@ -202,13 +205,14 @@ def chat_stream(user_message, history=None):
     history = history or []
     messages = _build_messages(user_message, history)
 
-    for _ in range(MAX_STEPS):
+    for step in range(MAX_STEPS):
+        use_tools = tools.TOOLS if step == 0 else None  # tools chi o luot dau -> luot sau prefill nhe
         content_parts = []
         calls = {}
         tf = _ThinkFilter()
         produced = False  # da phat duoc chu nao cho chu nha chua (de khong im lang hoan toan)
         try:
-            for chunk in llm.chat(messages, tools=tools.TOOLS, stream=True):
+            for chunk in llm.chat(messages, tools=use_tools, stream=True):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)

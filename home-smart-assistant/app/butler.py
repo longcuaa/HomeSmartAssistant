@@ -198,23 +198,80 @@ _ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
                      r"do sang trong nha|chi so moi truong)")
 
 
+# Tu xac nhan / tu choi (da bo dau). Tranh 'dung' vi 'dung'(dung roi) lan 'dung'(dung lam).
+_CONFIRM_RE = re.compile(r"\b(co|u|um|uh|ok|oke|okay|vang|chuan|dong y|duoc|dung roi)\b")
+_DENY_RE = re.compile(r"\b(khong|thoi|khoi|huy|khoan)\b")
+# Trang thai cho xac nhan (CLI 1 nguoi dung). API nhieu phien thi can tach theo phien.
+_PENDING = {"action": None, "device": None, "candidates": None}
+
+
+def _clear_pending():
+    _PENDING.update(action=None, device=None, candidates=None)
+
+
+def _match_devices(words):
+    """Cac thiet bi khop voi tu nguoi dung noi (bo 'phong'); tat ca tu da noi nam trong ten."""
+    keyw = {k: set(w for w in tools._norm(k).split() if w != "phong") for k in tools.HOME}
+    all_dev = set().union(*keyw.values()) if keyw else set()
+    said = words & all_dev
+    if not said:
+        return []
+    return [k for k, kw in keyw.items() if said <= kw]
+
+
 def _fast_path(message):
-    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi ro rang. Tra None -> de LLM xu ly."""
+    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi. Tra None -> de LLM xu ly.
+
+    Lenh bat/tat LUON hoi xac nhan truoc khi lam:
+    - Ro rang 1 thiet bi -> 'Ban co chac muon bat/tat X khong?' -> 'co' moi lam.
+    - Mo ho nhieu thiet bi -> 'Ban muon ... thiet bi nao: ...?' -> chon ten -> lam.
+    """
     m = tools._norm(message)
     if not m:
         return None
-    # Khop thiet bi MEM theo tu: tat ca tu dac trung cua ten (bo 'phong') deu co trong cau.
-    # Nho vay 'den bep' khop 'den phong bep'; con 'den phong khach' (thieu 'tran'/'led') -> mo ho, bo qua.
     words = set(m.split())
-    devices = []
-    for k in tools.HOME:
-        kw = [w for w in tools._norm(k).split() if w != "phong"]
-        if kw and all(w in words for w in kw):
-            devices.append(k)
+
+    # 1) Dang cho phan hoi cho mot lenh truoc do?
+    if _PENDING["action"]:
+        act = _PENDING["action"]
+        if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho)
+            picked = [k for k in _PENDING["candidates"]
+                      if set(w for w in tools._norm(k).split() if w != "phong") & words]
+            if len(picked) == 1:                         # chon xong -> van hoi xac nhan lan cuoi
+                verb = "bật" if act == "on" else "tắt"
+                _PENDING.update(action=act, device=picked[0], candidates=None)
+                return f"Bạn có chắc muốn {verb} {picked[0]} không?"
+        else:                                            # cho xac nhan co/khong
+            if _DENY_RE.search(m):
+                _clear_pending()
+                return "Đã hủy, không thực hiện."
+            if _CONFIRM_RE.search(m):
+                dev = _PENDING["device"]
+                _clear_pending()
+                return tools.control_device(dev, act)
+        _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
+
+    # 2) Lenh dieu khien -> HOI XAC NHAN truoc khi lam (khong kem nhiet do -> de LLM lo)
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
-    # Dieu khien: chi khi DUNG 1 thiet bi + DUNG 1 hanh dong + khong co so (nhiet do -> de LLM lo).
-    if len(devices) == 1 and (on ^ off) and not re.search(r"\d", m):
-        return tools.control_device(devices[0], "on" if on else "off")
+    if (on ^ off) and not re.search(r"\d", m):
+        cands = _match_devices(words)
+        act = "on" if on else "off"
+        verb = "bật" if on else "tắt"
+        if len(cands) == 1:
+            _PENDING.update(action=act, device=cands[0], candidates=None)
+            return f"Bạn có chắc muốn {verb} {cands[0]} không?"
+        if len(cands) > 1:
+            _PENDING.update(action=act, device=None, candidates=cands)
+            return f"Bạn muốn {verb} thiết bị nào: {', '.join(cands)}?"
+
+    # 2.5) Hoi SO LUONG theo loai thiet bi: "co may dieu hoa", "bao nhieu den", "co may quat"
+    # -> dem CHINH XAC tu HOME, khong de LLM doan.
+    if re.search(r"\b(may|bao nhieu)\b", m):
+        cands = _match_devices(words)
+        if cands:
+            return f"Trong nhà có {len(cands)} thiết bị: {', '.join(cands)}."
+
+    # 3) Hoi trang thai / moi truong (khong can xac nhan)
     if _STATUS_RE.search(m):
         return tools.get_status()
     if _ENV_RE.search(m):
@@ -281,13 +338,13 @@ def chat(user_message, history=None):
         try:
             msg = llm.chat(messages, tools=use_tools).choices[0].message
         except Exception:
-            return "Xin loi, he thong dang phan hoi cham, anh chi thu lai sau giay lat.", history
+            return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
             reply = _strip_think(msg.content)
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
-                reply = "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+                reply = "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
             _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
@@ -312,7 +369,7 @@ def chat(user_message, history=None):
             _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
-    return "Xin loi, toi chua xu ly duoc yeu cau nay.", history
+    return "Xin lỗi, tôi chưa xử lý được yêu cầu này.", history
 
 
 def chat_stream(user_message, history=None):
@@ -358,7 +415,7 @@ def chat_stream(user_message, history=None):
                     if tcd.function and tcd.function.arguments:
                         e["args"] += tcd.function.arguments
         except Exception:
-            yield "Xin loi, he thong dang phan hoi cham, anh chi thu lai sau giay lat."
+            yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
         tail = tf.flush()
@@ -370,7 +427,7 @@ def chat_stream(user_message, history=None):
         if not calls:
             if not produced:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
-                yield "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+                yield "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
             else:
                 _cache_put(user_message, "".join(answer), used)
             return  # da stream xong cau tra loi cuoi
@@ -401,7 +458,7 @@ def chat_stream(user_message, history=None):
             return
         # nguoc lai: vong sau se stream cau tra loi dien dat tu ket qua cong cu
 
-    yield "Xin loi, toi chua xu ly duoc yeu cau nay."
+    yield "Xin lỗi, tôi chưa xử lý được yêu cầu này."
 
 
 def warm_up():

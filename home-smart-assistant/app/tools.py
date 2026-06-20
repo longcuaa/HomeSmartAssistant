@@ -14,14 +14,14 @@ from app import llm, vector_store, memory, device as hub, weather, calendar_stor
 # Trang thai nha gia lap, dung khi khong co broker. Thuc te doc qua MQTT.
 # Key dat ASCII khong dau theo quy uoc; ham _find_device() khop ca khi nguoi dung noi co dau.
 HOME = {
-    "den tran phong khach": {"on": False},
+    "den tran phong khach": {"on": True},
     "den led phong khach": {"on": False},
-    "dieu hoa phong khach": {"on": False, "temp": 26},
-    "den phong bep": {"on": False},
+    "dieu hoa phong khach": {"on": True, "temp": 26},
+    "den phong bep": {"on": True},
     "den phong ngu": {"on": False},
     "quat phong ngu": {"on": False},
     "dieu hoa phong ngu": {"on": False, "temp": 26},
-    "den phong hoc": {"on": False},
+    "den phong hoc": {"on": True},
     "quat phong hoc": {"on": False},
     "den hanh lang": {"on": False},
 }

@@ -1,4 +1,5 @@
 # Danh sach nguon bao de cap nhat moi sang, moi URL mot dong.
 # Dong trong va dong bat dau bang dau thang se duoc bo qua.
 # Vi du:
-# https://vnexpress.net/cong-nghe
+https://vnexpress.net/cong-nghe
+https://baomoi.com/

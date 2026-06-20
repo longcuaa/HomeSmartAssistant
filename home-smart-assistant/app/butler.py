@@ -198,29 +198,72 @@ _ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
                      r"do sang trong nha|chi so moi truong)")
 
 
-def _fast_path(message):
-    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi ro rang. Tra None -> de LLM xu ly.
+# Tu xac nhan / tu choi (da bo dau). Tranh 'dung' vi 'dung'(dung roi) lan 'dung'(dung lam).
+_CONFIRM_RE = re.compile(r"\b(co|u|um|uh|ok|oke|okay|vang|chuan|dong y|duoc|dung roi)\b")
+_DENY_RE = re.compile(r"\b(khong|thoi|khoi|huy|khoan)\b")
+# Trang thai cho xac nhan (CLI 1 nguoi dung). API nhieu phien thi can tach theo phien.
+_PENDING = {"action": None, "device": None, "candidates": None}
 
-    Dieu khien: tim thiet bi qua cac tu thiet bi nguoi dung noi (vd 'dieu hoa', 'den bep').
-    - Khop dung 1 thiet bi -> lam ngay.
-    - Khop NHIEU thiet bi (vd 'tat dieu hoa' ma co 2 dieu hoa) -> HOI LAI muon cai nao.
+
+def _clear_pending():
+    _PENDING.update(action=None, device=None, candidates=None)
+
+
+def _match_devices(words):
+    """Cac thiet bi khop voi tu nguoi dung noi (bo 'phong'); tat ca tu da noi nam trong ten."""
+    keyw = {k: set(w for w in tools._norm(k).split() if w != "phong") for k in tools.HOME}
+    all_dev = set().union(*keyw.values()) if keyw else set()
+    said = words & all_dev
+    if not said:
+        return []
+    return [k for k, kw in keyw.items() if said <= kw]
+
+
+def _fast_path(message):
+    """Tra loi tuc thi (KHONG goi LLM) cho y dinh thiet bi. Tra None -> de LLM xu ly.
+
+    Lenh bat/tat LUON hoi xac nhan truoc khi lam:
+    - Ro rang 1 thiet bi -> 'Ban co chac muon bat/tat X khong?' -> 'co' moi lam.
+    - Mo ho nhieu thiet bi -> 'Ban muon ... thiet bi nao: ...?' -> chon ten -> lam.
     """
     m = tools._norm(message)
     if not m:
         return None
     words = set(m.split())
+
+    # 1) Dang cho phan hoi cho mot lenh truoc do?
+    if _PENDING["action"]:
+        act = _PENDING["action"]
+        if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho) -> chon xong lam luon
+            picked = [k for k in _PENDING["candidates"]
+                      if set(w for w in tools._norm(k).split() if w != "phong") & words]
+            if len(picked) == 1:
+                _clear_pending()
+                return tools.control_device(picked[0], act)
+        else:                                            # cho xac nhan co/khong
+            if _DENY_RE.search(m):
+                _clear_pending()
+                return "Đã hủy, không thực hiện."
+            if _CONFIRM_RE.search(m):
+                dev = _PENDING["device"]
+                _clear_pending()
+                return tools.control_device(dev, act)
+        _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
+
+    # 2) Lenh dieu khien -> HOI XAC NHAN truoc khi lam (khong kem nhiet do -> de LLM lo)
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
-    if (on ^ off) and not re.search(r"\d", m):  # co hanh dong bat/tat ro rang, khong kem nhiet do
-        keyw = {k: set(w for w in tools._norm(k).split() if w != "phong") for k in tools.HOME}
-        all_dev_words = set().union(*keyw.values()) if keyw else set()
-        said = words & all_dev_words            # cac tu chi thiet bi ma nguoi dung da noi
-        if said:
-            cands = [k for k, kw in keyw.items() if said <= kw]  # thiet bi khop het cac tu da noi
-            if len(cands) == 1:
-                return tools.control_device(cands[0], "on" if on else "off")
-            if len(cands) > 1:                  # mo ho -> hoi lai cho chinh xac
-                return (f"Bạn muốn {'bật' if on else 'tắt'} thiết bị nào: "
-                        f"{', '.join(cands)}?")
+    if (on ^ off) and not re.search(r"\d", m):
+        cands = _match_devices(words)
+        act = "on" if on else "off"
+        verb = "bật" if on else "tắt"
+        if len(cands) == 1:
+            _PENDING.update(action=act, device=cands[0], candidates=None)
+            return f"Bạn có chắc muốn {verb} {cands[0]} không?"
+        if len(cands) > 1:
+            _PENDING.update(action=act, device=None, candidates=cands)
+            return f"Bạn muốn {verb} thiết bị nào: {', '.join(cands)}?"
+
+    # 3) Hoi trang thai / moi truong (khong can xac nhan)
     if _STATUS_RE.search(m):
         return tools.get_status()
     if _ENV_RE.search(m):

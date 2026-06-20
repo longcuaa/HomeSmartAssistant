@@ -14,6 +14,7 @@ Chay thu: python -m app.butler. Can model ho tro tool calling, vi du qwen3.
 """
 import json
 import re
+import hashlib
 from datetime import datetime
 import config
 from app import llm, tools, memory
@@ -157,6 +158,36 @@ def _history_after(history, user_message, reply):
     ]
 
 
+# --- Cache cau tra loi: cung 1 cau hoi + du lieu KHONG doi -> tra ngay, khong goi model.
+# Chu ky (signature) gom HOME + SENSORS + bo nho + phut hien tai: bat ky thay doi nao cung lam
+# cache het hieu luc (vi du bat/tat thiet bi doi HOME; sang phut moi cho cau hoi gio/thoi tiet).
+_RESP_CACHE = {}
+_RESP_CACHE_MAX = 256
+# Cong cu LAM DOI trang thai -> khong cache de lenh luon thuc thi that.
+_STATE_TOOLS = {"control_device", "remember"}
+
+
+def _state_signature():
+    blob = json.dumps([tools.HOME, tools.SENSORS, memory.load(),
+                       datetime.now().strftime("%Y%m%d%H%M")],
+                      ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.md5(blob.encode("utf-8")).hexdigest()
+
+
+def _cache_get(message):
+    hit = _RESP_CACHE.get((message or "").strip().lower())
+    return hit[1] if hit and hit[0] == _state_signature() else None
+
+
+def _cache_put(message, reply, used_tools):
+    key = (message or "").strip().lower()
+    if not key or not reply or (used_tools & _STATE_TOOLS):
+        return  # cau rong, tra loi rong, hoac lenh doi trang thai thi khong cache
+    _RESP_CACHE[key] = (_state_signature(), reply)
+    if len(_RESP_CACHE) > _RESP_CACHE_MAX:
+        _RESP_CACHE.pop(next(iter(_RESP_CACHE)))  # bo muc cu nhat
+
+
 def _stream_pieces(text):
     """Cat chuoi CO SAN (vd ket qua cong cu tra thang) thanh tung tu de stream ra dan,
     cho cam giac real-time thay vi hien nguyen cuc mot lan."""
@@ -200,7 +231,11 @@ def stream_sentences(pieces):
 def chat(user_message, history=None):
     """Mot luot, khong stream. Tra ve (cau_tra_loi, lich_su_moi). Dung cho API."""
     history = history or []
+    cached = _cache_get(user_message)
+    if cached is not None:
+        return cached, _history_after(history, user_message, cached)  # du lieu khong doi -> tra ngay
     messages = _build_messages(user_message, history)
+    used = set()
 
     for step in range(MAX_STEPS):
         # Chi gui tools o luot DAU (de model chon cong cu). Cac luot sau chi dien dat tu ket qua
@@ -216,6 +251,7 @@ def chat(user_message, history=None):
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 reply = "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+            _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
         messages.append({
@@ -229,12 +265,14 @@ def chat(user_message, history=None):
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
+            used.add(tc.function.name)
             result = tools.execute(tc.function.name, args)
             results.append((tc.function.name, result))
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         if results and all(name in DIRECT_REPLY_TOOLS for name, _ in results):
             reply = " ".join(r for _, r in results)
+            _cache_put(user_message, reply, used)
             return reply, _history_after(history, user_message, reply)
 
     return "Xin loi, toi chua xu ly duoc yeu cau nay.", history
@@ -243,7 +281,14 @@ def chat(user_message, history=None):
 def chat_stream(user_message, history=None):
     """Mot luot, stream tung doan chu. Yield cac chuoi. Caller tu gom de luu lich su."""
     history = history or []
+    cached = _cache_get(user_message)
+    if cached is not None:
+        for piece in _stream_pieces(cached):
+            yield piece  # du lieu khong doi -> tra cache ngay, van stream tung tu cho dong nhat
+        return
     messages = _build_messages(user_message, history)
+    used = set()
+    answer = []  # gom van ban tra loi cuoi de cache lai
 
     for step in range(MAX_STEPS):
         use_tools = tools.TOOLS if step == 0 else None  # tools chi o luot dau -> luot sau prefill nhe
@@ -259,6 +304,7 @@ def chat_stream(user_message, history=None):
                     visible = tf.feed(delta.content)
                     if visible:
                         produced = True
+                        answer.append(visible)
                         yield visible
                 for tcd in (delta.tool_calls or []):
                     idx = tcd.index if tcd.index is not None else 0
@@ -276,12 +322,15 @@ def chat_stream(user_message, history=None):
         tail = tf.flush()
         if tail:
             produced = True
+            answer.append(tail)
             yield tail
 
         if not calls:
             if not produced:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 yield "Xin loi, anh chi hoi lai giup toi duoc khong a?"
+            else:
+                _cache_put(user_message, "".join(answer), used)
             return  # da stream xong cau tra loi cuoi
 
         payload = []
@@ -297,12 +346,15 @@ def chat_stream(user_message, history=None):
                 args = json.loads(c["args"] or "{}")
             except json.JSONDecodeError:
                 args = {}
+            used.add(c["name"])
             result = tools.execute(c["name"], args)
             results.append((c["name"], result))
             messages.append({"role": "tool", "tool_call_id": c["id"], "content": result})
 
         if results and all(name in DIRECT_REPLY_TOOLS for name, _ in results):
-            for piece in _stream_pieces(" ".join(r for _, r in results)):
+            reply = " ".join(r for _, r in results)
+            _cache_put(user_message, reply, used)
+            for piece in _stream_pieces(reply):
                 yield piece  # stream tung tu de hien dan, khong hien nguyen cuc
             return
         # nguoc lai: vong sau se stream cau tra loi dien dat tu ket qua cong cu

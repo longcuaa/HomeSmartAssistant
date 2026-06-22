@@ -75,6 +75,18 @@ The request flow for a chat turn:
     no-op. `_device_str` rebuilds a device name from the model's `{"type","name"}` dict form.
     Unparseable (mangled) JSON is skipped. Root cause of leaking is high sampling temperature ->
     keep `TOOL_TEMPERATURE` low (separate from chat `TEMPERATURE`).
+  - **Fake-completion-claim detection**: the model sometimes just *narrates* "Da bat quat phong
+    ngu. (gia lap)" without any tool call — a lie, since control only happens via confirmation.
+    `_extract_claimed_actions` finds "da <verb> <device>" claims whose REAL `HOME` state hasn't
+    changed and routes them through `_gate_control` (asks to confirm, then actually does it);
+    `_ClaimGuard` does this sentence-by-sentence in the stream so the false claim is never shown.
+    True recaps (state already matches) and questions/offers ("ban co muon toi bat...?") are left
+    alone. `_SIM_MARK_RE` strips the system's "(gia lap)" marker if the model parrots it.
+  - **Flexible device matching** (`tools._norm` / `_norm_device`): underscores/hyphens become
+    spaces (model emits `dieu_hoa`), and synonyms map to canonical names (`may lanh`->`dieu hoa`,
+    `bong den`->`den`). A type-only name (e.g. "dieu hoa", 2 units) asks which room instead of
+    "not found". Note the "may" (may lanh) vs "may" (so luong) collision: count detection runs on
+    the synonym-expanded text so "bat may lanh" is not mistaken for a count question.
   - **Direct-reply latency optimization**: tools in `DIRECT_REPLY_TOOLS` return a ready-made
     string spoken verbatim, skipping one extra model round-trip.
 - **`app/tools.py`** — the tool registry. `TOOLS` is the OpenAI tool-schema list; `_REGISTRY`

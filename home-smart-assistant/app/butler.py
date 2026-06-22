@@ -41,7 +41,9 @@ SYSTEM_PROMPT = (
     "- get_status: tình trạng thiết bị (bật/tắt, nhiệt độ) và chỉ số môi trường trong nhà.\n"
     "- search_knowledge: cách làm, khắc phục sự cố (mạng/router, thiết bị hỏng), kiến thức, tin tức.\n"
     "- get_weather: thời tiết ngoài trời. get_calendar / add_event: xem hoặc thêm lịch.\n"
-    "- control_device: bật/tắt hoặc chỉnh nhiệt độ thiết bị.\n"
+    "- control_device: bật/tắt hoặc chỉnh nhiệt độ thiết bị. Muốn điều khiển thì PHẢI gọi công cụ "
+    "này (hệ thống sẽ tự hỏi xác nhận). TUYỆT ĐỐI không tự viết 'Đã bật...', 'Đã tắt...', 'đã đặt...' "
+    "khi chưa thực sự gọi công cụ — nói vậy là nói dối vì thiết bị KHÔNG hề thay đổi.\n"
     "- remember: ghi nhớ khi chủ nhân BÀY TỎ sở thích/thói quen ('tôi thích...', 'nhớ giúp tôi...'); "
     "đừng nhầm với ra lệnh ('bật...', 'tắt...').\n"
     "Khi nói về thiết bị/trạng thái: chỉ nêu ĐÚNG dữ liệu get_status trả về — KHÔNG bịa thêm thiết bị, "
@@ -278,6 +280,11 @@ def _cut_visible(text):
     return _cut_tool_call(_cut_foreign(text))
 
 
+# '(gia lap)' la MARKER cua he thong (gan vao ket qua that khi chay gia lap). Neu xuat hien trong
+# van ban MODEL sinh ra thi do la bat chuoc tu lich su -> bo di (model khong duoc tu "khoe gia lap").
+_SIM_MARK_RE = re.compile(r"\s*\(\s*(?:giả lập|gia lap)\s*\)\s*", re.IGNORECASE)
+
+
 # Ten cong cu dai nhat -> so ky tu can giu lai o duoi khi stream (phong ten cong cu dang hinh thanh).
 _MAX_TOOL_LEN = max((len(n) for n in tools._REGISTRY), default=16)
 
@@ -316,8 +323,11 @@ class _LeakGuard:
 
 
 def _clean(text):
-    """Don dau ra cho chu nha (chuoi HOAN CHINH): bo khoi suy nghi, chu nuoc ngoai, tool-call ro ri."""
-    return _cut_tool_call(_cut_foreign(_strip_think(text))).strip(_TRIM_CHARS) if text else text
+    """Don dau ra cho chu nha (chuoi HOAN CHINH): bo khoi suy nghi, chu nuoc ngoai, tool-call ro ri,
+    va marker '(gia lap)' bi model bat chuoc."""
+    if not text:
+        return text
+    return _SIM_MARK_RE.sub(" ", _cut_tool_call(_cut_foreign(_strip_think(text)))).strip(_TRIM_CHARS)
 
 # --- Cau hoi ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
 # Phai xet TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu',
@@ -526,6 +536,75 @@ def _extract_leaked_controls(text):
         if isinstance(args, dict):
             out.append(args)
     return out
+
+
+# Model "khoe DA LAM" hanh dong thiet bi: 'Da bat...', 'Da tat...', 'Da dat... do'. Vi dieu khien
+# CHI xay ra qua xac nhan (fast-path), moi cau model tu noi 'da bat X' deu la BIA -> ta bat lai.
+_CLAIM_RE = re.compile(r"\bda\s+(bat|mo|khoi dong|tat|ngat|dat|chinh|giam|tang)\b")
+
+
+def _extract_claimed_actions(text):
+    """Tim cau model BIA la da lam ('Da bat quat phong ngu') ma trang thai THAT chua doi -> tra
+    list args de _gate_control hoi xac nhan that su. Bo qua khi trang thai da khop (model recap dung)."""
+    out = []
+    for sent in re.split(r"[.!?;\n]", tools._norm_device(text or "")):
+        mt = _CLAIM_RE.search(sent)
+        if not mt:
+            continue
+        verb = mt.group(1)
+        devs = _match_devices(set(re.findall(r"[a-z0-9]+", sent)))
+        if len(devs) != 1:                 # khong ro 1 thiet bi -> khong doan
+            continue
+        dev = devs[0]
+        st = tools.HOME.get(dev)
+        on = isinstance(st, dict) and st.get("on")
+        temp = st.get("temp") if isinstance(st, dict) else None
+        num = re.search(r"\b(\d{1,2})\b", sent)
+        if verb in ("dat", "chinh", "giam", "tang") and num and temp is not None:
+            t = int(num.group(1))
+            if not (on and temp == t):     # chua dung -> claim sai -> gate
+                out.append({"device": dev, "temperature": t})
+        elif verb in ("tat", "ngat"):
+            if on:                         # 'da tat' nhung dang bat -> sai -> gate
+                out.append({"device": dev, "state": "off"})
+        else:                              # bat/mo/khoi dong
+            if not on:                     # 'da bat' nhung dang tat -> sai -> gate
+                out.append({"device": dev, "state": "on"})
+    return out
+
+
+class _ClaimGuard:
+    """Khi STREAM: gom tung CAU, bo cau model BIA la da lam hanh dong thiet bi (vd 'Da bat quat
+    phong ngu') va ghi lai de caller hoi xac nhan. Cac cau khac cho qua binh thuong."""
+
+    def __init__(self):
+        self.buf = ""
+        self.claims = []
+
+    def _check(self, sent):
+        if not sent:
+            return ""
+        acts = _extract_claimed_actions(sent)
+        if acts:
+            self.claims.extend(acts)
+            return ""                      # KHONG hien cau bia ra cho chu nha
+        cleaned = _SIM_MARK_RE.sub(" ", sent)   # bo marker '(gia lap)' bi bat chuoc
+        return cleaned if cleaned.strip(" \n.,;:-") else ""
+
+    def feed(self, text):
+        self.buf += (text or "")
+        out = []
+        while True:
+            mt = re.search(r"[.!?;\n]", self.buf)
+            if not mt:
+                break
+            out.append(self._check(self.buf[:mt.end()]))
+            self.buf = self.buf[mt.end():]
+        return "".join(out)
+
+    def flush(self):
+        sent, self.buf = self.buf, ""
+        return self._check(sent)
 
 
 def _apply_action(act, device, scope=None):
@@ -831,10 +910,12 @@ def chat(user_message, history=None):
             return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
-            # Model "ke" lenh control_device ra van ban thay vi goi that? -> van xac nhan roi lam.
-            leaked = _extract_leaked_controls(_strip_think(msg.content))
-            if leaked:
-                reply = _gate_control(leaked)
+            # Model "ke" lenh control_device ra van ban, hoac BIA la 'da bat...' du chua lam gi?
+            # -> chuyen thanh yeu cau xac nhan, khong de model tu tien/noi doi.
+            clean_content = _strip_think(msg.content)
+            actions = _extract_leaked_controls(clean_content) + _extract_claimed_actions(clean_content)
+            if actions:
+                reply = _gate_control(actions)
                 return reply, _history_after(history, user_message, reply)
             reply = _clean(msg.content)
             if not reply:
@@ -928,13 +1009,14 @@ def chat_stream(user_message, history=None):
         calls = {}
         tf = _ThinkFilter()
         lg = _LeakGuard()   # chan tool-call ro ri ra van ban (xuyen suot nhieu chunk)
+        cg = _ClaimGuard()  # bo cau model BIA 'da bat/tat...' (gom theo cau)
         produced = False  # da phat duoc chu nao cho chu nha chua (de khong im lang hoan toan)
         try:
             for chunk in llm.chat(messages, tools=use_tools, stream=True):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)
-                    visible = lg.feed(_cut_foreign(tf.feed(delta.content)))
+                    visible = cg.feed(lg.feed(_cut_foreign(tf.feed(delta.content))))
                     if visible:
                         produced = True
                         answer.append(visible)
@@ -952,17 +1034,19 @@ def chat_stream(user_message, history=None):
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
-        tail = lg.feed(_cut_foreign(tf.flush())) + lg.flush()
+        leftover = lg.feed(_cut_foreign(tf.flush())) + lg.flush()
+        tail = cg.feed(leftover) + cg.flush()
         if tail:
             produced = True
             answer.append(tail)
             yield tail
 
         if not calls:
-            # Model "ke" lenh control_device ra van ban (da bi _LeakGuard giau)? -> van xac nhan roi lam.
-            leaked = _extract_leaked_controls(_strip_think("".join(content_parts)))
-            if leaked:
-                reply = _gate_control(leaked)
+            # Model "ke" lenh control_device ra van ban (da bi _LeakGuard giau), hoac BIA 'da bat...'
+            # (da bi _ClaimGuard giau)? -> chuyen thanh yeu cau xac nhan, khong de noi doi/tu tien.
+            actions = _extract_leaked_controls(_strip_think("".join(content_parts))) + cg.claims
+            if actions:
+                reply = _gate_control(actions)
                 for piece in _stream_pieces(reply):
                     yield piece
                 return

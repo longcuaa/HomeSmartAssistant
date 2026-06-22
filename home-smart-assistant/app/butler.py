@@ -278,6 +278,43 @@ def _cut_visible(text):
     return _cut_tool_call(_cut_foreign(text))
 
 
+# Ten cong cu dai nhat -> so ky tu can giu lai o duoi khi stream (phong ten cong cu dang hinh thanh).
+_MAX_TOOL_LEN = max((len(n) for n in tools._REGISTRY), default=16)
+
+
+class _LeakGuard:
+    """Chan tool-call bi ro ri ra van ban khi STREAM. Mot khi thay 'ten_cong_cu(' thi cat het phan
+    sau (ke ca cac chunk tiep theo, vi tham so JSON den o cac chunk sau). Giu lai _MAX_TOOL_LEN ky
+    tu cuoi phong khi ten cong cu dang hinh thanh vat qua bien chunk."""
+
+    def __init__(self):
+        self.killed = False
+        self.buf = ""
+
+    def feed(self, text):
+        if self.killed:
+            return ""
+        self.buf += (text or "")
+        mt = _TOOL_CALL_RE.search(self.buf)
+        if mt:                                   # da thay tool-call -> phat phan truoc, chan phan sau
+            out = self.buf[:mt.start()]
+            self.buf = ""
+            self.killed = True
+            return out
+        if len(self.buf) > _MAX_TOOL_LEN:        # phat phan an toan, giu lai duoi cung
+            out = self.buf[:-_MAX_TOOL_LEN]
+            self.buf = self.buf[-_MAX_TOOL_LEN:]
+            return out
+        return ""
+
+    def flush(self):
+        if self.killed:
+            return ""
+        out, self.buf = self.buf, ""
+        mt = _TOOL_CALL_RE.search(out)
+        return out[:mt.start()] if mt else out
+
+
 def _clean(text):
     """Don dau ra cho chu nha (chuoi HOAN CHINH): bo khoi suy nghi, chu nuoc ngoai, tool-call ro ri."""
     return _cut_tool_call(_cut_foreign(_strip_think(text))).strip(_TRIM_CHARS) if text else text
@@ -320,11 +357,12 @@ _CONFIRM_RE = re.compile(r"\b(co|u|um|uh|ok|oke|okay|vang|chuan|dong y|duoc|dung
 _DENY_RE = re.compile(r"\b(khong|thoi|khoi|huy|khoan)\b")
 # Trang thai cho xac nhan (CLI 1 nguoi dung). API nhieu phien thi can tach theo phien.
 # action: 'on' | 'off' | ('temp', do) | ('all', 'on'/'off'). scope: danh sach thiet bi cho lenh 'all'.
-_PENDING = {"action": None, "device": None, "candidates": None, "scope": None}
+# batch: danh sach [(act, device), ...] khi LLM de xuat NHIEU thiet bi cung luc -> xac nhan ca loat.
+_PENDING = {"action": None, "device": None, "candidates": None, "scope": None, "batch": None}
 
 
 def _clear_pending():
-    _PENDING.update(action=None, device=None, candidates=None, scope=None)
+    _PENDING.update(action=None, device=None, candidates=None, scope=None, batch=None)
 
 
 # Thiet bi DANG NOI DEN gan nhat. Giup cau CUT LUI ('bat len', 'tat di', '25 do') tiep tuc dung
@@ -365,6 +403,85 @@ def _choose_phrase(act, devices):
         return f"Bạn muốn đặt thiết bị nào ở {act[1]} độ: {', '.join(devices)}?"
     verb = "bật" if act == "on" else "tắt"
     return f"Bạn muốn {verb} thiết bị nào: {', '.join(devices)}?"
+
+
+def _act_phrase(act, device):
+    """Cum mo ta mot hanh dong tren 1 thiet bi (dung de ghep cau xac nhan ca loat)."""
+    if isinstance(act, tuple) and act[0] == "temp":
+        return f"đặt {device} ở {act[1]} độ"
+    return f"{'bật' if act == 'on' else 'tắt'} {device}"
+
+
+def _batch_confirm_phrase(items):
+    """Cau xac nhan cho NHIEU hanh dong cung luc, vd 'bat quat phong ngu va dat dieu hoa 25 do'."""
+    return "Bạn có chắc muốn " + " và ".join(_act_phrase(a, d) for a, d in items) + " không?"
+
+
+def _parse_control_args(args):
+    """Doc args cua mot lenh control_device tu MODEL -> (kind, payload):
+      ('ok', (act, device))            - ro 1 thiet bi + ro hanh dong
+      ('ambiguous', (act, [devices]))  - ten loai mo ho (nhieu phong)
+      ('need_state', device)           - co thiet bi nhung chua ro bat/tat
+      ('unknown', ten)                 - khong tim thay thiet bi
+    """
+    dev = tools._coerce_arg(args.get("device"))
+    matches = tools._find_devices(dev) if dev else []
+    act = None
+    temp = args.get("temperature")
+    if temp is not None:
+        try:
+            act = ("temp", int(tools._coerce_arg(temp)))
+        except (TypeError, ValueError):
+            act = None
+    if act is None:
+        st = str(tools._coerce_arg(args.get("state")) or "").strip().lower()
+        if st in ("on", "bat", "mo", "true", "1"):
+            act = "on"
+        elif st in ("off", "tat", "dong", "false", "0"):
+            act = "off"
+    if not matches:
+        return ("unknown", str(dev))
+    if len(matches) > 1:
+        return ("ambiguous", (act, matches))
+    if act is None:
+        return ("need_state", matches[0])
+    return ("ok", (act, matches[0]))
+
+
+def _gate_control(list_args):
+    """Chuyen lenh control_device cua MODEL thanh YEU CAU XAC NHAN, KHONG thuc thi ngay.
+
+    Day la cho ep QUY TAC bang code (khong phu thuoc model nghe loi prompt): mo quan gia LUON
+    hoi 'ban co chac...?' truoc khi bat/tat/dat nhiet do, va chi thuc thi khi chu nha noi 'co'
+    (qua fast-path _PENDING). Nho vay model nho khong the tu tien dieu khien thiet bi."""
+    items = []
+    for args in list_args:
+        kind, payload = _parse_control_args(args)
+        if kind == "ambiguous":
+            act, matches = payload
+            _PENDING.update(action=(act or "on"), device=None, candidates=matches, scope=None, batch=None)
+            return _choose_phrase(act or "on", matches)
+        if kind == "need_state":
+            return f"Bạn muốn bật hay tắt {payload}?"
+        if kind == "unknown":
+            return f"Không tìm thấy thiết bị '{payload}'."
+        items.append(payload)  # ('ok', (act, device))
+    if not items:
+        return "Bạn muốn điều khiển thiết bị nào?"
+    # Bo trung (model doi khi goi lap mot lenh).
+    seen, uniq = set(), []
+    for act, key in items:
+        sig = (str(act), key)
+        if sig not in seen:
+            seen.add(sig)
+            uniq.append((act, key))
+    if len(uniq) == 1:
+        act, key = uniq[0]
+        _PENDING.update(action=act, device=key, candidates=None, scope=None, batch=None)
+        _note_device(key)
+        return _confirm_phrase(act, key)
+    _PENDING.update(action=None, device=None, candidates=None, scope=None, batch=uniq)
+    return _batch_confirm_phrase(uniq)
 
 
 def _apply_action(act, device, scope=None):
@@ -410,7 +527,7 @@ def _fast_path(message):
     words = set(re.findall(r"[a-z0-9]+", m))
 
     # 1) Dang cho phan hoi cho mot lenh truoc do?
-    if _PENDING["action"]:
+    if _PENDING["action"] or _PENDING["batch"]:
         act = _PENDING["action"]
         if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho)
             matched = [k for k in _PENDING["candidates"] if k in set(_match_devices(words))]
@@ -426,6 +543,14 @@ def _fast_path(message):
                 _clear_pending()
                 return "Đã hủy, không thực hiện."
             if _CONFIRM_RE.search(m):
+                if _PENDING["batch"]:                     # xac nhan ca loat (LLM de xuat nhieu tb)
+                    batch = _PENDING["batch"]
+                    _clear_pending()
+                    out = []
+                    for a, d in batch:
+                        out.append(_apply_action(a, d))
+                        _note_device(d)
+                    return " ".join(out)
                 dev, scope = _PENDING["device"], _PENDING["scope"]
                 _clear_pending()
                 _note_device(dev)
@@ -560,6 +685,32 @@ def _fast_path(message):
     return None
 
 
+def _last_assistant(history):
+    """Noi dung luot tra loi gan nhat cua quan gia (de biet vua hoi/de xuat gi)."""
+    for h in reversed(history or []):
+        if h.get("role") == "assistant":
+            return h.get("content") or ""
+    return ""
+
+
+def _defer_to_llm(message, history):
+    """Cau bat/tat KHONG ro thiet bi ('bat di', 'tat di') NGAY SAU khi quan gia vua de xuat/hoi
+    (luot truoc ket thuc bang '?') -> de LLM xu ly theo NGU CANH (vd 'lam theo de xuat') thay vi
+    fast-path hoi lai 'thiet bi nao' tu dau. Khi do LLM se goi control_device va bi _gate_control
+    chan lai -> van hoi xac nhan truoc khi lam. Khong ap dung khi dang co lenh CHO XAC NHAN."""
+    if _PENDING["action"] or _PENDING["batch"]:
+        return False
+    if not _last_assistant(history).rstrip().endswith("?"):
+        return False
+    m = tools._norm(message)
+    if not m:
+        return False
+    words = set(re.findall(r"[a-z0-9]+", m))
+    on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
+    # Chi defer khi co y bat/tat NHUNG khong ro thiet bi (neu ro thiet bi thi fast-path xac nhan luon).
+    return (on or off) and not _match_devices(words)
+
+
 def _stream_pieces(text):
     """Cat chuoi CO SAN (vd ket qua cong cu tra thang) thanh tung tu de stream ra dan,
     cho cam giac real-time thay vi hien nguyen cuc mot lan."""
@@ -606,9 +757,10 @@ def chat(user_message, history=None):
     cached = _cache_get(user_message)
     if cached is not None:
         return cached, _history_after(history, user_message, cached)  # du lieu khong doi -> tra ngay
-    fast = _fast_path(user_message)
-    if fast is not None:
-        return fast, _history_after(history, user_message, fast)  # y dinh ro rang -> tra ngay, khong goi LLM
+    if not _defer_to_llm(user_message, history):     # 'bat di' sau de xuat -> de LLM hieu ngu canh
+        fast = _fast_path(user_message)
+        if fast is not None:
+            return fast, _history_after(history, user_message, fast)  # y dinh ro -> tra ngay, khong LLM
     if _knowledge_intent(user_message):
         # Cau kien thuc/su co: tra cuu tai lieu roi de model dien dat (1 luot, khong chon nham tool).
         messages = _rag_context_messages(user_message, history)
@@ -637,6 +789,19 @@ def chat(user_message, history=None):
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 reply = "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
             _cache_put(user_message, reply, used)
+            return reply, _history_after(history, user_message, reply)
+
+        # Lenh dieu khien tu MODEL: KHONG thuc thi ngay -> chuyen thanh YEU CAU XAC NHAN (ep quy
+        # tac bang code, khong tu tien bat/tat). Chi thuc thi khi chu nha noi 'co' (qua fast-path).
+        control_args = []
+        for tc in msg.tool_calls:
+            if tc.function.name == "control_device":
+                try:
+                    control_args.append(json.loads(tc.function.arguments or "{}"))
+                except json.JSONDecodeError:
+                    control_args.append({})
+        if control_args:
+            reply = _gate_control(control_args)
             return reply, _history_after(history, user_message, reply)
 
         messages.append({
@@ -671,11 +836,12 @@ def chat_stream(user_message, history=None):
         for piece in _stream_pieces(cached):
             yield piece  # du lieu khong doi -> tra cache ngay, van stream tung tu cho dong nhat
         return
-    fast = _fast_path(user_message)
-    if fast is not None:
-        for piece in _stream_pieces(fast):
-            yield piece  # y dinh ro rang -> tra ngay, khong goi LLM
-        return
+    if not _defer_to_llm(user_message, history):     # 'bat di' sau de xuat -> de LLM hieu ngu canh
+        fast = _fast_path(user_message)
+        if fast is not None:
+            for piece in _stream_pieces(fast):
+                yield piece  # y dinh ro rang -> tra ngay, khong goi LLM
+            return
     if _knowledge_intent(user_message):
         # Cau kien thuc/su co: tra cuu tai lieu roi de model dien dat (khong chon nham tool).
         kmsgs = _rag_context_messages(user_message, history)
@@ -709,13 +875,14 @@ def chat_stream(user_message, history=None):
         content_parts = []
         calls = {}
         tf = _ThinkFilter()
+        lg = _LeakGuard()   # chan tool-call ro ri ra van ban (xuyen suot nhieu chunk)
         produced = False  # da phat duoc chu nao cho chu nha chua (de khong im lang hoan toan)
         try:
             for chunk in llm.chat(messages, tools=use_tools, stream=True):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)
-                    visible = _cut_visible(tf.feed(delta.content))
+                    visible = lg.feed(_cut_foreign(tf.feed(delta.content)))
                     if visible:
                         produced = True
                         answer.append(visible)
@@ -733,7 +900,7 @@ def chat_stream(user_message, history=None):
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
-        tail = _cut_visible(tf.flush())
+        tail = lg.feed(_cut_foreign(tf.flush())) + lg.flush()
         if tail:
             produced = True
             answer.append(tail)
@@ -746,6 +913,20 @@ def chat_stream(user_message, history=None):
             else:
                 _cache_put(user_message, "".join(answer), used)
             return  # da stream xong cau tra loi cuoi
+
+        # Lenh dieu khien tu MODEL: KHONG thuc thi ngay -> chuyen thanh YEU CAU XAC NHAN (ep quy tac).
+        control_args = []
+        for c in calls.values():
+            if c["name"] == "control_device":
+                try:
+                    control_args.append(json.loads(c["args"] or "{}"))
+                except json.JSONDecodeError:
+                    control_args.append({})
+        if control_args:
+            reply = _gate_control(control_args)
+            for piece in _stream_pieces(reply):
+                yield piece
+            return
 
         payload = []
         for i, c in enumerate(calls.values()):

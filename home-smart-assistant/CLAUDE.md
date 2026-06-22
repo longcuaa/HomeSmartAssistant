@@ -55,13 +55,25 @@ The request flow for a chat turn:
 
 - **`app/butler.py`** — the agent loop. `chat()` (non-streaming, used by the API) and
   `chat_stream()` (streaming, used by the CLI and a hook for future TTS) both run a bounded
-  tool-calling loop (`MAX_STEPS = 5`). Two deliberate behaviors live here:
-  - **Confirmation gating** is enforced by the *system prompt*, not code: simple reversible
-    actions (lights/fans) execute immediately; high-impact/ambiguous ones (turn off everything,
-    extreme temperatures) must ask the user first.
-  - **Direct-reply latency optimization**: tools in `DIRECT_REPLY_TOOLS` (the device-control
-    tools) return a ready-made confirmation string that is spoken verbatim, skipping one extra
-    model round-trip. If you add a control tool, consider adding it to that set.
+  tool-calling loop (`MAX_STEPS = 5`). Deliberate behaviors here:
+  - **Confirmation gating is enforced by CODE, not just the prompt.** Device control NEVER
+    executes directly. Whether the command comes from the deterministic `_fast_path` or from the
+    LLM calling `control_device`, it is turned into a confirm question (`_gate_control` intercepts
+    the model's `control_device` tool calls before they run and sets `_PENDING`); the action only
+    runs when the homeowner says "co" on the next turn (handled by `_fast_path`'s `_PENDING`
+    logic, via `_apply_action` -> `tools.control_device`). This makes a small/unreliable model
+    unable to actuate devices on its own. Ambiguous names (e.g. "quat" -> 2 fans) ask which room;
+    multi-device suggestions confirm as a batch (`_PENDING["batch"]`).
+  - **Context memory for terse follow-ups**: `_LAST` tracks the device just discussed so "bat len"
+    / "tat di" continue with it; `_defer_to_llm` sends a bare on/off (no device) that follows a
+    suggestion question to the LLM so it resolves from context (then gets gated). A bare on/off
+    with no context at all asks which device.
+  - **Leaked tool-call suppression**: small models sometimes print `control_device({...})` as
+    text instead of a real tool call. `_LeakGuard` (streaming) and `_clean` (non-stream) strip it
+    so the homeowner never sees the garbage. Root cause is high sampling temperature -> use
+    `TOOL_TEMPERATURE` (low) on tool-calling turns, separate from chat `TEMPERATURE`.
+  - **Direct-reply latency optimization**: tools in `DIRECT_REPLY_TOOLS` return a ready-made
+    string spoken verbatim, skipping one extra model round-trip.
 - **`app/tools.py`** — the tool registry. `TOOLS` is the OpenAI tool-schema list; `_REGISTRY`
   maps names to functions; `execute(name, args)` dispatches. Device control acts on an in-memory
   `HOME` dict (simulated) — replace the function bodies with real device API calls in production;

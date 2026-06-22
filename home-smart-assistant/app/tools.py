@@ -86,21 +86,28 @@ def _coerce_arg(v):
     return v
 
 
-def _find_device(name):
-    """Tim key thiet bi that trong HOME khop voi ten nguoi dung noi (khong phan biet dau/hoa thuong)."""
+def _find_devices(name):
+    """Tat ca thiet bi trong HOME khop voi ten nguoi dung noi (khong phan biet dau/hoa thuong).
+
+    Tra DANH SACH: [] = khong khop; 1 phan tu = khop duy nhat; >1 = mo ho (vd 'quat' -> 2 quat,
+    'dieu hoa' -> 2 dieu hoa) de caller hoi lai phong nao thay vi bao 'khong tim thay'."""
     if not name or not isinstance(name, str):
-        return None
+        return []
     if name in HOME:
-        return name
+        return [name]
     target = _norm(name)
-    for key in HOME:
-        if _norm(key) == target:
-            return key
-    # Khop mem: tat ca tu trong 'name' nam trong ten thiet bi, va CHI DUNG 1 thiet bi khop
-    # (vd 'den bep' -> 'den phong bep'); neu mo ho (nhieu khop) thi tra None de khoi chon bua.
+    exact = [key for key in HOME if _norm(key) == target]
+    if exact:
+        return exact
+    # Khop mem: tat ca tu trong 'name' nam trong ten thiet bi (vd 'den bep' -> 'den phong bep').
     tw = set(target.split())
-    cands = [k for k in HOME if tw and tw <= set(_norm(k).split())]
-    return cands[0] if len(cands) == 1 else None
+    return [k for k in HOME if tw and tw <= set(_norm(k).split())]
+
+
+def _find_device(name):
+    """Khop DUY NHAT 1 thiet bi, nguoc lai tra None (khong khop hoac mo ho nhieu thiet bi)."""
+    matches = _find_devices(name)
+    return matches[0] if len(matches) == 1 else None
 
 
 def turn_on_device(device):
@@ -221,9 +228,12 @@ def add_event(date, time="", title=""):
 def control_device(device, state=None, temperature=None):
     """Dieu khien thiet bi: bat/tat va/hoac dat nhiet do (gop turn_on/turn_off/set_temperature)."""
     device = _coerce_arg(device)  # phong khi model tra dict/list -> tranh vo
-    key = _find_device(device)
-    if key is None:
+    matches = _find_devices(device)
+    if not matches:
         return f"Không tìm thấy thiết bị '{device}'."
+    if len(matches) > 1:  # mo ho (vd 'quat' -> 2 quat) -> hoi lai phong nao thay vi bao khong thay
+        return f"Có {len(matches)} thiết bị khớp '{device}': {', '.join(matches)}. Bạn muốn thiết bị nào?"
+    key = matches[0]
     if temperature is not None:
         try:
             temperature = int(_coerce_arg(temperature))

@@ -245,40 +245,42 @@ _PREF_RE = re.compile(r"toi thich|toi khong thich|toi thuong|toi hay|nho giup|nh
 _CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯＀-￯]")
 
 
-def _strip_foreign(text):
-    """Cat bo phan chu Trung/Nhat/Han (model doi khi chen) -> giu lai phan tieng Viet o truoc.
+# Ky tu thua o hai dau cau hoan chinh. CHI trim cho chuoi HOAN CHINH, KHONG trim tung chunk khi
+# stream (neu khong se an mat dau cach o bien token -> 'dieu hoaphong khach').
+_TRIM_CHARS = " \n，,。．、；;:-"
 
-    Vi du 'Ban co muon de ngu dễ入睡吗？...' -> 'Ban co muon de ngu de'. Neu CA cau la chu
-    nuoc ngoai thi tra ve chuoi rong (caller se dung cau xin loi mac dinh)."""
-    if not text:
-        return text
-    mt = _CJK_RE.search(text)
-    if mt:
-        text = text[:mt.start()]
-    return text.strip(" \n，,。．、；;:-")
-
-
-# Mot so model (nhat la qwen3 o che do /no_think) thinh thoang "ke ra" loi goi cong cu dang VAN
-# BAN trong noi dung thay vi goi that, vi du: control_device({"device"...}). JSON thuong bi hong
+# Mot so model (vd qwen2.5 khi nhiet do cao) thinh thoang "ke ra" loi goi cong cu dang VAN BAN
+# trong noi dung thay vi goi that, vi du: control_device({"device"...}). JSON thuong bi hong
 # (thieu dau hai cham) nen khong thuc thi duoc -> ta CAT bo de chu nha khong thay rac. Day la luoi
-# an toan; cach sua goc la dung model goi cong cu dang tin (qwen2.5-instruct).
+# an toan; cach sua goc la ha TOOL_TEMPERATURE de tool calling dang tin cay.
 _TOOL_CALL_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in tools._REGISTRY)
                            + r")\s*[(\[{]")
 
 
-def _strip_tool_call_text(text):
-    """Cat bo doan 'ten_cong_cu(...)' bi ro ri vao van ban tra loi (giu phan truoc no)."""
+def _cut_foreign(text):
+    """Cat tu ky tu Trung/Nhat/Han dau tien tro di. GIU NGUYEN khoang trang -> dung khi stream."""
+    if not text:
+        return text
+    mt = _CJK_RE.search(text)
+    return text[:mt.start()] if mt else text
+
+
+def _cut_tool_call(text):
+    """Cat tu doan 'ten_cong_cu(...)' bi ro ri tro di. GIU NGUYEN khoang trang -> dung khi stream."""
     if not text:
         return text
     mt = _TOOL_CALL_RE.search(text)
-    if mt:
-        text = text[:mt.start()]
-    return text.strip(" \n，,。．、；;:-")
+    return text[:mt.start()] if mt else text
+
+
+def _cut_visible(text):
+    """Loc 1 chunk stream: bo chu nuoc ngoai + tool-call ro ri, GIU khoang trang giua cac tu."""
+    return _cut_tool_call(_cut_foreign(text))
 
 
 def _clean(text):
-    """Don dau ra cho chu nha: bo khoi suy nghi, chu nuoc ngoai, va tool-call ro ri."""
-    return _strip_tool_call_text(_strip_foreign(_strip_think(text)))
+    """Don dau ra cho chu nha (chuoi HOAN CHINH): bo khoi suy nghi, chu nuoc ngoai, tool-call ro ri."""
+    return _cut_tool_call(_cut_foreign(_strip_think(text))).strip(_TRIM_CHARS) if text else text
 
 # --- Cau hoi ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
 # Phai xet TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu',
@@ -323,6 +325,18 @@ _PENDING = {"action": None, "device": None, "candidates": None, "scope": None}
 
 def _clear_pending():
     _PENDING.update(action=None, device=None, candidates=None, scope=None)
+
+
+# Thiet bi DANG NOI DEN gan nhat. Giup cau CUT LUI ('bat len', 'tat di', '25 do') tiep tuc dung
+# thiet bi vua nhac toi thay vi hoi lai tu dau. KHONG xoa khi _clear_pending: du lenh vua bi huy
+# thi ngu canh "dang noi ve thiet bi nao" van con. Chi co 1 thiet bi (CLI 1 nguoi dung).
+_LAST = {"device": None}
+
+
+def _note_device(dev):
+    """Ghi nho thiet bi vua duoc nhac/thao tac de cau cut lui sau do tiep tuc dung no."""
+    if dev:
+        _LAST["device"] = dev
 
 
 def _match_devices(words):
@@ -402,6 +416,7 @@ def _fast_path(message):
             matched = [k for k in _PENDING["candidates"] if k in set(_match_devices(words))]
             if len(matched) == 1:                        # da ro -> hoi xac nhan lan cuoi
                 _PENDING.update(action=act, device=matched[0], candidates=None)
+                _note_device(matched[0])
                 return _confirm_phrase(act, matched[0])
             if matched:                                  # van con nhieu -> hoi lai trong so do
                 _PENDING["candidates"] = matched
@@ -413,6 +428,7 @@ def _fast_path(message):
             if _CONFIRM_RE.search(m):
                 dev, scope = _PENDING["device"], _PENDING["scope"]
                 _clear_pending()
+                _note_device(dev)
                 return _apply_action(act, dev, scope)
         _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
 
@@ -455,12 +471,16 @@ def _fast_path(message):
     if _ASK_TEMP_RE.search(m) and cands:
         acs = [k for k in cands if isinstance(tools.HOME[k], dict) and "temp" in tools.HOME[k]]
         if acs:
+            if len(acs) == 1:
+                _note_device(acs[0])               # dang noi ve 1 dieu hoa -> nho lai
             parts = [f"{k} đang đặt {tools.HOME[k]['temp']} độ"
                      + ("" if tools.HOME[k].get("on") else " (đang tắt)") for k in acs]
             return "; ".join(parts) + "."
 
     # 4b) Hoi trang thai bat/tat cua thiet bi cu the (KHONG phai cau dem) -> tra trang thai that.
     if cands and not asking_count and _DEV_STATUS_RE.search(m):
+        if len(cands) == 1:
+            _note_device(cands[0])                 # dang noi ve 1 thiet bi -> nho lai
         return _devices_status_text(cands)
 
     # 4c) Dem / liet ke thiet bi: CHI khi co nhac den thiet bi.
@@ -503,9 +523,19 @@ def _fast_path(message):
             act = ("temp", int(num_m.group(1)))
             if len(acs) == 1:
                 _PENDING.update(action=act, device=acs[0], candidates=None, scope=None)
+                _note_device(acs[0])
                 return _confirm_phrase(act, acs[0])
             _PENDING.update(action=act, device=None, candidates=acs, scope=None)
             return _choose_phrase(act, acs)
+
+    # 6b') Cau CUT LUI dat nhiet do ('len 25 do', '25 do di') khi dang noi ve 1 dieu hoa -> dung
+    # thiet bi do. Yeu cau co chu 'do' (do C) de khong nham voi so o cau khac (2+2, gia bitcoin).
+    if num_m and not cands and "do" in words and _LAST["device"]:
+        ld = _LAST["device"]
+        if isinstance(tools.HOME.get(ld), dict) and "temp" in tools.HOME[ld]:
+            act = ("temp", int(num_m.group(1)))
+            _PENDING.update(action=act, device=ld, candidates=None, scope=None)
+            return _confirm_phrase(act, ld)
 
     # 6c) Bat/tat thiet bi.
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
@@ -513,13 +543,17 @@ def _fast_path(message):
         act = "on" if on else "off"
         if len(cands) == 1 and not num_m:               # ro 1 thiet bi -> hoi xac nhan
             _PENDING.update(action=act, device=cands[0], candidates=None, scope=None)
+            _note_device(cands[0])
             return _confirm_phrase(act, cands[0])
         if len(cands) > 1:                              # nhieu thiet bi khop -> hoi chon
             _PENDING.update(action=act, device=None, candidates=cands, scope=None)
             return _choose_phrase(act, cands)
-        if not cands and (num_m or "cai" in words):
-            # 'bat 1 cai cho toi', 'bat giup cai nao do': muon bat/tat nhung CHUA ro thiet bi nao
-            # -> hoi lai ngay (KHONG de LLM doan bua roi sinh tool-call hong). Liet ke toan bo.
+        if not cands:
+            if _LAST["device"]:
+                # Cau cut lui ('bat len', 'tat di') + DANG noi ve 1 thiet bi -> tiep tuc thiet bi do.
+                _PENDING.update(action=act, device=_LAST["device"], candidates=None, scope=None)
+                return _confirm_phrase(act, _LAST["device"])
+            # CHUA tung noi ve thiet bi nao -> phai HOI LAI bat/tat cai gi (khong de LLM doan bua).
             all_dev = list(tools.HOME)
             _PENDING.update(action=act, device=None, candidates=all_dev, scope=None)
             return _choose_phrase(act, all_dev)
@@ -650,14 +684,14 @@ def chat_stream(user_message, history=None):
         try:
             for chunk in llm.chat(kmsgs, tools=None, stream=True):
                 vis = tf.feed(getattr(chunk.choices[0].delta, "content", None) or "")
-                clean = _strip_tool_call_text(_strip_foreign(vis))
+                clean = _cut_visible(vis)
                 if clean:
                     kans.append(clean)
                     yield clean
         except Exception:
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
-        tail = _strip_tool_call_text(_strip_foreign(tf.flush()))
+        tail = _cut_visible(tf.flush())
         if tail:
             kans.append(tail)
             yield tail
@@ -681,7 +715,7 @@ def chat_stream(user_message, history=None):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)
-                    visible = _strip_tool_call_text(_strip_foreign(tf.feed(delta.content)))
+                    visible = _cut_visible(tf.feed(delta.content))
                     if visible:
                         produced = True
                         answer.append(visible)
@@ -699,7 +733,7 @@ def chat_stream(user_message, history=None):
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
-        tail = _strip_tool_call_text(_strip_foreign(tf.flush()))
+        tail = _cut_visible(tf.flush())
         if tail:
             produced = True
             answer.append(tail)

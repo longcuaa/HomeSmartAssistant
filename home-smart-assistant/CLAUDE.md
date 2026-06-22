@@ -68,10 +68,13 @@ The request flow for a chat turn:
     / "tat di" continue with it; `_defer_to_llm` sends a bare on/off (no device) that follows a
     suggestion question to the LLM so it resolves from context (then gets gated). A bare on/off
     with no context at all asks which device.
-  - **Leaked tool-call suppression**: small models sometimes print `control_device({...})` as
-    text instead of a real tool call. `_LeakGuard` (streaming) and `_clean` (non-stream) strip it
-    so the homeowner never sees the garbage. Root cause is high sampling temperature -> use
-    `TOOL_TEMPERATURE` (low) on tool-calling turns, separate from chat `TEMPERATURE`.
+  - **Leaked tool-call recovery**: small models sometimes print `control_device({...})` as text
+    instead of a real tool call. `_LeakGuard` hides it from the live stream; then
+    `_extract_leaked_controls` parses the leaked JSON out of the raw content and routes it through
+    `_gate_control` — so "lam di"/"bat di" still produce a (confirmed) action instead of a silent
+    no-op. `_device_str` rebuilds a device name from the model's `{"type","name"}` dict form.
+    Unparseable (mangled) JSON is skipped. Root cause of leaking is high sampling temperature ->
+    keep `TOOL_TEMPERATURE` low (separate from chat `TEMPERATURE`).
   - **Direct-reply latency optimization**: tools in `DIRECT_REPLY_TOOLS` return a ready-made
     string spoken verbatim, skipping one extra model round-trip.
 - **`app/tools.py`** — the tool registry. `TOOLS` is the OpenAI tool-schema list; `_REGISTRY`

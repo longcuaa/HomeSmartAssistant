@@ -417,6 +417,16 @@ def _batch_confirm_phrase(items):
     return "Bạn có chắc muốn " + " và ".join(_act_phrase(a, d) for a, d in items) + " không?"
 
 
+def _device_str(v):
+    """Ep tham so 'device' (model doi khi tra dict {'type':'quat','name':'phong ngu'} hoac list)
+    ve chuoi GOP du tu de tim thiet bi, vd 'quat phong ngu' (khong chi lay moi 'phong ngu')."""
+    if isinstance(v, dict):
+        return " ".join(str(x) for x in v.values() if isinstance(x, (str, int)))
+    if isinstance(v, (list, tuple)):
+        return " ".join(_device_str(x) for x in v)
+    return str(v) if v is not None else ""
+
+
 def _parse_control_args(args):
     """Doc args cua mot lenh control_device tu MODEL -> (kind, payload):
       ('ok', (act, device))            - ro 1 thiet bi + ro hanh dong
@@ -424,7 +434,7 @@ def _parse_control_args(args):
       ('need_state', device)           - co thiet bi nhung chua ro bat/tat
       ('unknown', ten)                 - khong tim thay thiet bi
     """
-    dev = tools._coerce_arg(args.get("device"))
+    dev = _device_str(args.get("device"))
     matches = tools._find_devices(dev) if dev else []
     act = None
     temp = args.get("temperature")
@@ -482,6 +492,40 @@ def _gate_control(list_args):
         return _confirm_phrase(act, key)
     _PENDING.update(action=None, device=None, candidates=None, scope=None, batch=uniq)
     return _batch_confirm_phrase(uniq)
+
+
+def _balanced_parens(text, i):
+    """Tu vi tri dau '(' tai i, tra ve chuoi den ')' KHOP (dem ngoac). None neu khong khop het."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[i:j + 1]
+    return None
+
+
+def _extract_leaked_controls(text):
+    """Tim cac lenh control_device(...) model lo IN RA DANG VAN BAN (thay vi goi cong cu that)
+    va tra ve danh sach args dict de dua vao _gate_control. Bo qua doan khong parse duoc JSON.
+
+    Nho vay 'lam di'/'bat di' van ra hanh dong (qua xac nhan) du model 'ke' lenh thay vi goi that."""
+    if not text:
+        return []
+    out = []
+    for mt in re.finditer(r"control_device\s*\(", text):
+        seg = _balanced_parens(text, text.index("(", mt.start()))
+        if not seg:
+            continue
+        try:
+            args = json.loads(seg[1:-1].strip())   # bo ( ) -> con {...}
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(args, dict):
+            out.append(args)
+    return out
 
 
 def _apply_action(act, device, scope=None):
@@ -784,6 +828,11 @@ def chat(user_message, history=None):
             return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
+            # Model "ke" lenh control_device ra van ban thay vi goi that? -> van xac nhan roi lam.
+            leaked = _extract_leaked_controls(_strip_think(msg.content))
+            if leaked:
+                reply = _gate_control(leaked)
+                return reply, _history_after(history, user_message, reply)
             reply = _clean(msg.content)
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
@@ -907,6 +956,13 @@ def chat_stream(user_message, history=None):
             yield tail
 
         if not calls:
+            # Model "ke" lenh control_device ra van ban (da bi _LeakGuard giau)? -> van xac nhan roi lam.
+            leaked = _extract_leaked_controls(_strip_think("".join(content_parts)))
+            if leaked:
+                reply = _gate_control(leaked)
+                for piece in _stream_pieces(reply):
+                    yield piece
+                return
             if not produced:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 yield "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"

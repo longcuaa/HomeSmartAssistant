@@ -73,9 +73,22 @@ def _norm(s):
     return s.replace("đ", "d").strip()
 
 
+def _coerce_arg(v):
+    """Ep tham so tool ve chuoi don gian. Model nho (7B) doi khi tra device/state dang dict/list
+    thay vi chuoi -> neu khong ep, code se vo voi 'unhashable type: dict' khi tra cuu HOME."""
+    if isinstance(v, dict):
+        for k in ("value", "name", "device", "state"):
+            if k in v:
+                return _coerce_arg(v[k])
+        return _coerce_arg(next(iter(v.values()), ""))
+    if isinstance(v, (list, tuple)):
+        return _coerce_arg(v[0]) if v else ""
+    return v
+
+
 def _find_device(name):
     """Tim key thiet bi that trong HOME khop voi ten nguoi dung noi (khong phan biet dau/hoa thuong)."""
-    if not name:
+    if not name or not isinstance(name, str):
         return None
     if name in HOME:
         return name
@@ -207,11 +220,17 @@ def add_event(date, time="", title=""):
 
 def control_device(device, state=None, temperature=None):
     """Dieu khien thiet bi: bat/tat va/hoac dat nhiet do (gop turn_on/turn_off/set_temperature)."""
+    device = _coerce_arg(device)  # phong khi model tra dict/list -> tranh vo
     key = _find_device(device)
     if key is None:
         return f"Không tìm thấy thiết bị '{device}'."
     if temperature is not None:
+        try:
+            temperature = int(_coerce_arg(temperature))
+        except (TypeError, ValueError):
+            return f"Nhiệt độ '{temperature}' không hợp lệ."
         return set_temperature(key, temperature)
+    state = _coerce_arg(state) if state is not None else None
     if state is None:
         return "Cần cho biết bật hay tắt thiết bị."
     s = str(state).strip().lower()

@@ -28,7 +28,11 @@ _WEEKDAYS = ["Thu hai", "Thu ba", "Thu tu", "Thu nam", "Thu sau", "Thu bay", "Ch
 SYSTEM_PROMPT = (
     "Bạn là quản gia AI RIÊNG của ngôi nhà này — thân thiện, ấm áp và CÓ CÁ TÍNH: trò chuyện tự nhiên, "
     "gần gũi như một người bạn đồng hành thật sự hiểu ý chủ nhân, đôi khi pha chút hóm hỉnh duyên dáng; "
-    "không máy móc, không khách sáo cứng nhắc. Luôn dùng tiếng Việt (không chêm ngoại ngữ).\n"
+    "không máy móc, không khách sáo cứng nhắc.\n"
+    "QUY TẮC NGÔN NGỮ (BẮT BUỘC): chỉ trả lời bằng TIẾNG VIỆT. TUYỆT ĐỐI không dùng chữ Trung "
+    "Quốc, Nhật, Hàn hay bất kỳ ngoại ngữ nào, kể cả một chữ.\n"
+    "Chỉ điều khiển được đèn, quạt, điều hòa có trong nhà. Thiết bị khác (máy giặt, cửa, tivi...) "
+    "thì nói thật là chưa điều khiển được, KHÔNG giả vờ đã làm. Không bịa thiết bị không có.\n"
     "Bạn hiểu rõ chủ nhân: người ngày đêm cày dự án AI và code, hay quên nghỉ ngơi và ăn uống thất thường. "
     "Dựa vào 'Sở thích đã biết' để chăm đúng ý và chủ động quan tâm (nhắc nghỉ, gợi ý cho dễ chịu) — nhẹ nhàng, không gò ép.\n"
     "Luôn trả lời NGẮN GỌN 1-3 câu, ấm áp và đúng trọng tâm; không bịa, không dài dòng. "
@@ -155,6 +159,22 @@ def _history_after(history, user_message, reply):
     ]
 
 
+def _knowledge_intent(message):
+    """Cau hoi kien thuc / su co (cach lam, khac phuc, tai sao, tin tuc...) -> bat buoc dung RAG."""
+    return bool(_KNOWLEDGE_RE.search(tools._norm(message)))
+
+
+def _rag_context_messages(user_message, history):
+    """Tra cuu tai lieu TRUOC, chen ket qua vao ngu canh roi de model chi viec DIEN DAT (goi
+    KHONG kem tools de model khoi chon nham tool). Bao dam cau kien thuc/su co luon dung tai lieu."""
+    rag = tools.search_knowledge(user_message)
+    base = _build_messages(user_message, history)
+    base.insert(-1, {"role": "system",
+                     "content": "Thong tin tra cuu tu tai lieu trong nha (dung de tra loi; neu "
+                                "khong lien quan thi noi chua co thong tin, KHONG bia):\n" + rag})
+    return base
+
+
 # --- Cache cau tra loi: cung 1 cau hoi + du lieu KHONG doi -> tra ngay, khong goi model.
 # Chu ky (signature) gom HOME + SENSORS + bo nho + phut hien tai: bat ky thay doi nao cung lam
 # cache het hieu luc (vi du bat/tat thiet bi doi HOME; sang phut moi cho cau hoi gio/thoi tiet).
@@ -194,6 +214,47 @@ _STATUS_RE = re.compile(r"(thiet bi gi|bao nhieu thiet bi|co thiet bi|nhung thie
 _ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
                      r"do sang trong nha|chi so moi truong)")
 
+# Hoi nhiet do cua dieu hoa ('phong ngu de bao nhieu do', 'dieu hoa may do').
+_ASK_TEMP_RE = re.compile(r"bao nhieu do|may do|de bao nhieu")
+# Hoi trang thai bat/tat cua MOT thiet bi cu the (khong phai dem so).
+_DEV_STATUS_RE = re.compile(r"bat hay tat|tat hay bat|dang (bat|tat|sang|chay|hoat dong)|"
+                            r"co (dang )?(bat|sang|chay)|sang khong|the nao")
+# Hoi thoi tiet ngoai troi -> goi get_weather thang (tranh model chon nham tool).
+_WEATHER_RE = re.compile(r"thoi tiet|ngoai troi|co mua|troi mua|du bao|"
+                         r"nong khong|lanh khong|mang ao mua|mang du|troi the nao")
+# Bat/tat TOAN BO (he trong) -> phai hoi xac nhan ro pham vi.
+_ALL_ON_RE = re.compile(r"\b(bat|mo)\b.*(het|tat ca|toan bo|moi thu)|"
+                        r"(tat ca|toan bo|moi thu)\b.*\b(bat|mo)\b")
+_ALL_OFF_RE = re.compile(r"tat (het|sach|toan bo|tat ca|moi thu)|"
+                         r"(het|toan bo|moi thu)\b.*\btat\b")
+# Cau hoi KIEN THUC / SU CO -> bat buoc tra cuu tai lieu (search_knowledge), khong de model
+# tu bia hoac chon nham tool (loi tung gap: wifi -> get_status, tin tuc -> get_weather).
+_KNOWLEDGE_RE = re.compile(
+    r"lam sao|lam the nao|cach (nao|de|reset|khac|sua|xu|lam|kiem|cai|ket|tang|giam)|khac phuc|"
+    r"xu ly the nao|xu ly nhu the nao|tai sao|vi sao|nguyen nhan|do dau|la do|"
+    r"tin tuc|huong dan|bi treo|bi hong|bi loi|bi nhap nhay|bi cham|cham qua|reset|"
+    r"khong vao duoc|khong ket noi|mat mang|mat wifi")
+
+# Chu nha BAY TO so thich/thoi quen -> de LLM + cong cu remember xu ly (KHONG coi la lenh thiet bi).
+_PREF_RE = re.compile(r"toi thich|toi khong thich|toi thuong|toi hay|nho giup|nho gium|nho la|"
+                      r"lan sau|tu gio|tu nay|moi khi|moi lan")
+
+# Chu Trung/Nhat/Han (CJK). Model 7B doi khi chen tieng nuoc ngoai -> ta cat bo.
+_CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯＀-￯]")
+
+
+def _strip_foreign(text):
+    """Cat bo phan chu Trung/Nhat/Han (model doi khi chen) -> giu lai phan tieng Viet o truoc.
+
+    Vi du 'Ban co muon de ngu dễ入睡吗？...' -> 'Ban co muon de ngu de'. Neu CA cau la chu
+    nuoc ngoai thi tra ve chuoi rong (caller se dung cau xin loi mac dinh)."""
+    if not text:
+        return text
+    mt = _CJK_RE.search(text)
+    if mt:
+        text = text[:mt.start()]
+    return text.strip(" \n，,。．、；;:-")
+
 # --- Cau hoi ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
 # Phai xet TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu',
 # neu khong cau hoi ngay/gio se bi hieu nham la 'dem thiet bi' -> tra ve danh sach thiet bi.
@@ -231,11 +292,12 @@ _WHOAMI_REPLY = ("Tôi là quản gia AI của ngôi nhà, luôn sẵn sàng ch�
 _CONFIRM_RE = re.compile(r"\b(co|u|um|uh|ok|oke|okay|vang|chuan|dong y|duoc|dung roi)\b")
 _DENY_RE = re.compile(r"\b(khong|thoi|khoi|huy|khoan)\b")
 # Trang thai cho xac nhan (CLI 1 nguoi dung). API nhieu phien thi can tach theo phien.
-_PENDING = {"action": None, "device": None, "candidates": None}
+# action: 'on' | 'off' | ('temp', do) | ('all', 'on'/'off'). scope: danh sach thiet bi cho lenh 'all'.
+_PENDING = {"action": None, "device": None, "candidates": None, "scope": None}
 
 
 def _clear_pending():
-    _PENDING.update(action=None, device=None, candidates=None)
+    _PENDING.update(action=None, device=None, candidates=None, scope=None)
 
 
 def _match_devices(words):
@@ -246,6 +308,53 @@ def _match_devices(words):
     if not said:
         return []
     return [k for k, kw in keyw.items() if said <= kw]
+
+
+def _confirm_phrase(act, device):
+    """Cau hoi xac nhan cho mot lenh (bat/tat/dat nhiet do) tren 1 thiet bi."""
+    if isinstance(act, tuple) and act[0] == "temp":
+        t = act[1]
+        warn = " Nhiet do nay hoi cuc doan, ban chac chu?" if (t < 18 or t > 30) else ""
+        return f"Bạn có chắc muốn đặt {device} ở {t} độ không?{warn}"
+    verb = "bật" if act == "on" else "tắt"
+    return f"Bạn có chắc muốn {verb} {device} không?"
+
+
+def _choose_phrase(act, devices):
+    """Cau hoi chon thiet bi khi lenh con mo ho (nhieu thiet bi khop)."""
+    if isinstance(act, tuple) and act[0] == "temp":
+        return f"Bạn muốn đặt thiết bị nào ở {act[1]} độ: {', '.join(devices)}?"
+    verb = "bật" if act == "on" else "tắt"
+    return f"Bạn muốn {verb} thiết bị nào: {', '.join(devices)}?"
+
+
+def _apply_action(act, device, scope=None):
+    """Thuc thi lenh sau khi chu nha xac nhan. Tra ve cau ket qua de noi thang."""
+    if isinstance(act, tuple) and act[0] == "all":      # bat/tat toan bo
+        sub = act[1]
+        targets = scope or list(tools.HOME)
+        for k in targets:
+            tools.control_device(k, sub)
+        verb = "bật" if sub == "on" else "tắt"
+        return f"Đã {verb} toàn bộ {len(targets)} thiết bị."
+    if isinstance(act, tuple) and act[0] == "temp":     # dat nhiet do
+        return tools.control_device(device, temperature=act[1])
+    return tools.control_device(device, act)            # bat/tat 1 thiet bi
+
+
+def _devices_status_text(devices):
+    """Trang thai bat/tat (kem nhiet do neu co) cua mot so thiet bi cu the."""
+    parts = []
+    for k in devices:
+        st = tools.HOME.get(k)
+        if isinstance(st, dict):
+            s = "đang bật" if st.get("on") else "đang tắt"
+            if "temp" in st:
+                s += f", {st['temp']} độ"
+        else:
+            s = str(st)
+        parts.append(f"{k} {s}")
+    return "; ".join(parts) + "."
 
 
 def _fast_path(message):
@@ -266,22 +375,26 @@ def _fast_path(message):
         act = _PENDING["action"]
         if _PENDING["candidates"]:                       # cho chon thiet bi (lenh mo ho)
             matched = [k for k in _PENDING["candidates"] if k in set(_match_devices(words))]
-            verb = "bật" if act == "on" else "tắt"
             if len(matched) == 1:                        # da ro -> hoi xac nhan lan cuoi
                 _PENDING.update(action=act, device=matched[0], candidates=None)
-                return f"Bạn có chắc muốn {verb} {matched[0]} không?"
+                return _confirm_phrase(act, matched[0])
             if matched:                                  # van con nhieu -> hoi lai trong so do
                 _PENDING["candidates"] = matched
-                return f"Bạn muốn {verb} thiết bị nào: {', '.join(matched)}?"
+                return _choose_phrase(act, matched)
         else:                                            # cho xac nhan co/khong
             if _DENY_RE.search(m):
                 _clear_pending()
                 return "Đã hủy, không thực hiện."
             if _CONFIRM_RE.search(m):
-                dev = _PENDING["device"]
+                dev, scope = _PENDING["device"], _PENDING["scope"]
                 _clear_pending()
-                return tools.control_device(dev, act)
+                return _apply_action(act, dev, scope)
         _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
+
+    # 1b) Cau kien thuc/su co hoac cau BAY TO so thich -> tra None de chat() dung RAG / remember,
+    # tranh fast-path bat nham (vd 'xu ly the nao' thanh trang thai, 'toi thich 26 do' thanh lenh).
+    if _KNOWLEDGE_RE.search(m) or _PREF_RE.search(m):
+        return None
 
     # 2) CAU HOI ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
     # Dat TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu'.
@@ -303,13 +416,32 @@ def _fast_path(message):
     if _WHOAMI_RE.search(m):
         return _WHOAMI_REPLY
 
-    # 4) CAU HOI ve so luong / trang thai -> tra ngay, KHONG coi la lenh (du cau co tu 'bat/tat').
-    # Phai xet TRUOC phan dieu khien de 'may cai den dang bat' khong bi hieu nham la lenh bat.
+    # 4) CAU HOI ve moi truong / trang thai / so luong thiet bi.
+    # Chi coi la cau hoi thiet bi khi co NHAC den thiet bi (ten thiet bi hoac chu 'thiet bi'),
+    # de 'bao nhieu'/'may' o cau khac (2+2=may?, gia bitcoin bao nhieu?) khong bi nham la dem thiet bi.
+    if _ENV_RE.search(m):                               # 'nhiet do trong nha' -> chi so moi truong
+        return tools.get_environment()
+
+    cands = _match_devices(words)
+    mentions_device = bool(cands) or "thiet bi" in m
     asking_count = bool(re.search(r"\b(may|bao nhieu)\b", m))
+
+    # 4a) Hoi nhiet do dieu hoa cua phong/thiet bi cu the ('phong ngu de bao nhieu do?').
+    if _ASK_TEMP_RE.search(m) and cands:
+        acs = [k for k in cands if isinstance(tools.HOME[k], dict) and "temp" in tools.HOME[k]]
+        if acs:
+            parts = [f"{k} đang đặt {tools.HOME[k]['temp']} độ"
+                     + ("" if tools.HOME[k].get("on") else " (đang tắt)") for k in acs]
+            return "; ".join(parts) + "."
+
+    # 4b) Hoi trang thai bat/tat cua thiet bi cu the (KHONG phai cau dem) -> tra trang thai that.
+    if cands and not asking_count and _DEV_STATUS_RE.search(m):
+        return _devices_status_text(cands)
+
+    # 4c) Dem / liet ke thiet bi: CHI khi co nhac den thiet bi.
     asking_on = "dang bat" in m
     asking_off = "dang tat" in m
-    if asking_count or asking_on or asking_off:
-        cands = _match_devices(words)
+    if (asking_count or asking_on or asking_off) and mentions_device:
         pool = cands if cands else list(tools.HOME)
         if asking_on:                              # 'may cai den dang bat' -> dem cai DANG BAT
             lst = [k for k in pool if isinstance(tools.HOME[k], dict) and tools.HOME[k].get("on")]
@@ -323,21 +455,43 @@ def _fast_path(message):
 
     if _STATUS_RE.search(m):
         return tools.get_status()
-    if _ENV_RE.search(m):
-        return tools.get_environment()
 
-    # 3) LENH dieu khien (chi khi KHONG phai cau hoi) -> hoi xac nhan truoc khi lam
+    # 5) Thoi tiet ngoai troi -> goi get_weather thang (tranh model chon nham tool).
+    if _WEATHER_RE.search(m):
+        return tools.get_weather()
+
+    # 6) LENH dieu khien -> hoi xac nhan truoc khi lam.
+    num_m = re.search(r"\b(\d{1,2})\b", m)
+    # 6a) Bat/tat TOAN BO (he trong): hoi xac nhan ro pham vi truoc khi lam.
+    all_on, all_off = bool(_ALL_ON_RE.search(m)), bool(_ALL_OFF_RE.search(m))
+    if (all_on ^ all_off) and not num_m:
+        sub = "on" if all_on else "off"
+        verb = "bật" if all_on else "tắt"
+        scope = cands if cands else list(tools.HOME)   # 'tat het den' -> chi cac den
+        _PENDING.update(action=("all", sub), device=None, candidates=None, scope=scope)
+        return f"Bạn có chắc muốn {verb} toàn bộ {len(scope)} thiết bị không?"
+
+    # 6b) Dat nhiet do dieu hoa: co so do + thiet bi co 'temp'.
+    if num_m and cands:
+        acs = [k for k in cands if isinstance(tools.HOME[k], dict) and "temp" in tools.HOME[k]]
+        if acs:
+            act = ("temp", int(num_m.group(1)))
+            if len(acs) == 1:
+                _PENDING.update(action=act, device=acs[0], candidates=None, scope=None)
+                return _confirm_phrase(act, acs[0])
+            _PENDING.update(action=act, device=None, candidates=acs, scope=None)
+            return _choose_phrase(act, acs)
+
+    # 6c) Bat/tat 1 thiet bi (khong co so).
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
-    if (on ^ off) and not re.search(r"\d", m):
-        cands = _match_devices(words)
+    if (on ^ off) and not num_m:
         act = "on" if on else "off"
-        verb = "bật" if on else "tắt"
         if len(cands) == 1:
-            _PENDING.update(action=act, device=cands[0], candidates=None)
-            return f"Bạn có chắc muốn {verb} {cands[0]} không?"
+            _PENDING.update(action=act, device=cands[0], candidates=None, scope=None)
+            return _confirm_phrase(act, cands[0])
         if len(cands) > 1:
-            _PENDING.update(action=act, device=None, candidates=cands)
-            return f"Bạn muốn {verb} thiết bị nào: {', '.join(cands)}?"
+            _PENDING.update(action=act, device=None, candidates=cands, scope=None)
+            return _choose_phrase(act, cands)
     return None
 
 
@@ -390,6 +544,16 @@ def chat(user_message, history=None):
     fast = _fast_path(user_message)
     if fast is not None:
         return fast, _history_after(history, user_message, fast)  # y dinh ro rang -> tra ngay, khong goi LLM
+    if _knowledge_intent(user_message):
+        # Cau kien thuc/su co: tra cuu tai lieu roi de model dien dat (1 luot, khong chon nham tool).
+        messages = _rag_context_messages(user_message, history)
+        try:
+            msg = llm.chat(messages, tools=None).choices[0].message
+        except Exception:
+            return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
+        reply = _strip_foreign(_strip_think(msg.content)) or "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp trong tài liệu."
+        _cache_put(user_message, reply, {"search_knowledge"})
+        return reply, _history_after(history, user_message, reply)
     messages = _build_messages(user_message, history)
     used = set()
 
@@ -403,7 +567,7 @@ def chat(user_message, history=None):
             return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
-            reply = _strip_think(msg.content)
+            reply = _strip_foreign(_strip_think(msg.content))
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 reply = "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
@@ -447,6 +611,30 @@ def chat_stream(user_message, history=None):
         for piece in _stream_pieces(fast):
             yield piece  # y dinh ro rang -> tra ngay, khong goi LLM
         return
+    if _knowledge_intent(user_message):
+        # Cau kien thuc/su co: tra cuu tai lieu roi de model dien dat (khong chon nham tool).
+        kmsgs = _rag_context_messages(user_message, history)
+        kans = []
+        tf = _ThinkFilter()
+        try:
+            for chunk in llm.chat(kmsgs, tools=None, stream=True):
+                vis = tf.feed(getattr(chunk.choices[0].delta, "content", None) or "")
+                clean = _strip_foreign(vis)
+                if clean:
+                    kans.append(clean)
+                    yield clean
+        except Exception:
+            yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
+            return
+        tail = _strip_foreign(tf.flush())
+        if tail:
+            kans.append(tail)
+            yield tail
+        if kans:
+            _cache_put(user_message, "".join(kans), {"search_knowledge"})
+        else:
+            yield "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp trong tài liệu."
+        return
     messages = _build_messages(user_message, history)
     used = set()
     answer = []  # gom van ban tra loi cuoi de cache lai
@@ -462,7 +650,7 @@ def chat_stream(user_message, history=None):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)
-                    visible = tf.feed(delta.content)
+                    visible = _strip_foreign(tf.feed(delta.content))
                     if visible:
                         produced = True
                         answer.append(visible)
@@ -480,7 +668,7 @@ def chat_stream(user_message, history=None):
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
-        tail = tf.flush()
+        tail = _strip_foreign(tf.flush())
         if tail:
             produced = True
             answer.append(tail)

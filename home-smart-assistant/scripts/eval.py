@@ -29,12 +29,21 @@ DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 
 def _route_of(question):
-    """Doan duong di MA KHONG goi LLM: fast-path/cache tra duoc -> 'fastpath', con lai 'llm'."""
+    """Doan duong di MA KHONG goi LLM va KHONG gay side-effect.
+
+    _fast_path() co the doi trang thai cho-xac-nhan (_PENDING); ta chup lai roi khoi phuc de viec
+    DOAN khong lam hong luot thuc te chay ngay sau do."""
     if butler._cache_get(question) is not None:
         return "cache"
-    if butler._fast_path(question) is not None:
+    snap = dict(butler._PENDING)
+    try:
+        is_fast = butler._fast_path(question) is not None
+    finally:
+        butler._PENDING.clear()
+        butler._PENDING.update(snap)
+    if is_fast:
         return "fastpath"
-    return "llm"
+    return "knowledge" if butler._knowledge_intent(question) else "llm"
 
 
 def _run_turn(question, history):
@@ -83,10 +92,11 @@ def main():
         emit(f"## [{g['id']}] {g['name']}")
         emit(f"_{g.get('muc_tieu', '')}_\n")
         for item in g["items"]:
+            butler._clear_pending()  # moi item la mot hoi thoai rieng -> xoa trang thai cho xac nhan
             turns = item.get("turns") or [item["q"]]
-            # Cau di fast-path se duoc danh dau; cau LLM bi bo qua khi --no-llm.
+            # Cau di fast-path se duoc danh dau; cau can LLM (gom ca RAG) bi bo qua khi --no-llm.
             first_route = _route_of(turns[0])
-            if args.no_llm and first_route == "llm":
+            if args.no_llm and first_route in ("llm", "knowledge"):
                 emit(f"- (bo qua, can LLM) {turns[0]!r}")
                 continue
 
@@ -99,7 +109,8 @@ def main():
                     n_fast += 1
                 elif dt > 4.0:
                     slow.append((dt, g["id"], q))
-                tag = {"fastpath": "FAST", "cache": "CACHE", "llm": "LLM "}[route]
+                tag = {"fastpath": "FAST", "cache": "CACHE",
+                       "llm": "LLM ", "knowledge": "RAG "}[route]
                 prefix = f"  - luot {i+1}: " if len(turns) > 1 else "- "
                 emit(f"{prefix}[{tag} {dt:4.1f}s] {q!r}")
                 emit(f"    -> {_short(reply)}")

@@ -15,7 +15,7 @@ t = time.perf_counter()
 llm.warm_up()
 print(f"[warmup] {time.perf_counter() - t:.1f}s\n")
 
-for q in ["xin chao", "xin chao", "may gio roi"]:
+for q in ["ban co the lam gi", "toi nong qua", "may gio roi","trong nha co bao nhieu thiet bi"]:
     t = time.perf_counter()
     reply, _ = butler.chat(q)
     print(f"Q: {q!r}  ->  {time.perf_counter() - t:.1f}s")

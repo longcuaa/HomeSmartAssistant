@@ -1,6 +1,11 @@
 [
   {
     "date": "2026-06-19",
+    "time": "",
+    "title": "đi chơi"
+  },
+  {
+    "date": "2026-06-19",
     "time": "18:00",
     "title": "Hop gia dinh cuoi tuan"
   },
@@ -10,8 +15,8 @@
     "title": "Kham suc khoe dinh ky"
   },
   {
-    "date": "2026-06-19",
-    "time": "",
-    "title": "đi chơi"
+    "date": "2026-06-20",
+    "time": "14:00",
+    "title": "Đi chơi"
   }
 ]

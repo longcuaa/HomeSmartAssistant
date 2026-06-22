@@ -7,6 +7,7 @@ device.py tu chuyen sang gia lap, va cac ham o day fall back ve dict HOME/SENSOR
 Phan khai bao cong cu TOOLS la hop dong voi model, giu on dinh du ha tang ben duoi thay doi.
 """
 import json
+import re
 import unicodedata
 import config
 from app import llm, vector_store, memory, device as hub, weather, calendar_store
@@ -66,11 +67,42 @@ def _parse_value(raw):
         return raw
 
 
+# Ten goi khac -> ten chuan trong HOME, de model/nguoi dung noi kieu nao cung hieu (khong cung nhac).
+# (a, b): thay cum 'a' (da chuan hoa) bang 'b'. Dat cum dai/cu the truoc.
+_DEVICE_SYNONYMS = (
+    ("dieu hoa nhiet do", "dieu hoa"),
+    ("dieu hoa khong khi", "dieu hoa"),
+    ("may dieu hoa", "dieu hoa"),
+    ("may lanh", "dieu hoa"),
+    ("dieu hoa", "dieu hoa"),
+    ("bong den", "den"),
+    ("den dien", "den"),
+    ("den chieu sang", "den"),
+    ("quat dien", "quat"),
+    ("quat may", "quat"),
+    ("quat gio", "quat"),
+    ("may quat", "quat"),
+)
+
+
 def _norm(s):
-    """Bo dau, ve chu thuong de khop ten thiet bi du nguoi dung go co dau hay khong, hoa hay thuong."""
+    """Bo dau, ve chu thuong de khop ten thiet bi du go co dau hay khong, hoa hay thuong.
+
+    Doi gach duoi/gach ngang thanh khoang trang (model hay tra 'dieu_hoa') va gop khoang trang
+    de tach tu on dinh -> matching mem hon, khong vo vi dau noi tu."""
     s = unicodedata.normalize("NFD", (s or "").lower())
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    return s.replace("đ", "d").strip()
+    s = s.replace("đ", "d")
+    s = re.sub(r"[_\-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _norm_device(s):
+    """Chuan hoa + doi ten goi khac ve ten chuan (may lanh -> dieu hoa, bong den -> den...)."""
+    t = _norm(s)
+    for a, b in _DEVICE_SYNONYMS:
+        t = t.replace(a, b)
+    return t
 
 
 def _coerce_arg(v):
@@ -95,11 +127,12 @@ def _find_devices(name):
         return []
     if name in HOME:
         return [name]
-    target = _norm(name)
+    target = _norm_device(name)        # chuan hoa + ten goi khac (may lanh -> dieu hoa, dieu_hoa -> dieu hoa)
     exact = [key for key in HOME if _norm(key) == target]
     if exact:
         return exact
-    # Khop mem: tat ca tu trong 'name' nam trong ten thiet bi (vd 'den bep' -> 'den phong bep').
+    # Khop mem: tat ca tu trong 'name' nam trong ten thiet bi (vd 'den bep' -> 'den phong bep',
+    # 'dieu hoa' -> ca 2 dieu hoa -> caller hoi phong nao thay vi bao khong tim thay).
     tw = set(target.split())
     return [k for k in HOME if tw and tw <= set(_norm(k).split())]
 

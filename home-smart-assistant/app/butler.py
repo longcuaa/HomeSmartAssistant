@@ -567,8 +567,10 @@ def _fast_path(message):
     m = tools._norm(message)
     if not m:
         return None
+    # md: ban da doi ten goi khac (may lanh -> dieu hoa, dieu_hoa -> dieu hoa) -> khop linh hoat hon.
     # Tach tu BO dau cau (vd 'den?' -> 'den') de khop ten thiet bi du nguoi dung co go '?,.!'.
-    words = set(re.findall(r"[a-z0-9]+", m))
+    md = tools._norm_device(message)
+    words = set(re.findall(r"[a-z0-9]+", md))
 
     # 1) Dang cho phan hoi cho mot lenh truoc do?
     if _PENDING["action"] or _PENDING["batch"]:
@@ -634,7 +636,8 @@ def _fast_path(message):
 
     cands = _match_devices(words)
     mentions_device = bool(cands) or "thiet bi" in m
-    asking_count = bool(re.search(r"\b(may|bao nhieu)\b", m))
+    # Dem tu md (da doi 'may lanh'->'dieu hoa') de chu 'may' (may lanh) khong bi nham la 'may?' (so luong).
+    asking_count = bool(re.search(r"\b(may|bao nhieu)\b", md))
 
     # 4a) Hoi nhiet do dieu hoa cua phong/thiet bi cu the ('phong ngu de bao nhieu do?').
     if _ASK_TEMP_RE.search(m) and cands:
@@ -749,7 +752,7 @@ def _defer_to_llm(message, history):
     m = tools._norm(message)
     if not m:
         return False
-    words = set(re.findall(r"[a-z0-9]+", m))
+    words = set(re.findall(r"[a-z0-9]+", tools._norm_device(message)))
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
     # Chi defer khi co y bat/tat NHUNG khong ro thiet bi (neu ro thiet bi thi fast-path xac nhan luon).
     return (on or off) and not _match_devices(words)

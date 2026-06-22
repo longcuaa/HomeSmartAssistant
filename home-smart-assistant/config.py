@@ -7,18 +7,24 @@ load_dotenv()
 # Model va endpoint (tuong thich OpenAI: Ollama o local, vLLM tren AWS)
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "ollama")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen3:8b")
+# qwen2.5:7b-instruct: model instruct (KHONG co che do suy nghi) -> goi cong cu (tool calling)
+# on dinh hon va nhanh hon qwen3:8b. qwen3 hay "ke ra" tool call dang van ban thay vi goi that.
+CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:7b-instruct")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 # Toc do phan hoi (latency)
-# ENABLE_THINKING=false tat che do suy nghi cua qwen3 (/no_think) -> tra loi nhanh hon nhieu,
-# danh doi mot chut chieu sau suy luan. Dat true neu uu tien chat luong hon toc do.
+# ENABLE_THINKING chi co tac dung voi model SUY NGHI (qwen3): false -> them /no_think de tra loi
+# nhanh hon. Voi model instruct (qwen2.5) thi khong anh huong (xem butler._system).
 ENABLE_THINKING = os.getenv("ENABLE_THINKING", "false").lower() in ("1", "true", "yes")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))  # gioi han do dai cau tra loi cho nhanh va gon
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))  # giay; tranh treo lau khi model phan hoi cham
-# Nhiet do sinh: de THAP cho goi cong cu on dinh va tra loi nhat quan. Mac dinh Ollama (~0.8)
-# khien model hay "ke ra y dinh" thay vi goi cong cu that -> dat thap de tool calling dang tin cay.
+# Nhiet do sinh cho luot TRO CHUYEN (khong kem cong cu): co the de cao hon de cau tra loi co
+# CA TINH, tu nhien. Khong anh huong do tin cay tool calling vi luot do dung TOOL_TEMPERATURE.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
+# Nhiet do RIENG cho luot CO GUI CONG CU (tool calling). PHAI de THAP: nhiet do cao khien model
+# hay "ke ra y dinh" (in control_device({...}) dang van ban) thay vi goi cong cu that -> thiet bi
+# khong chay. Tach khoi TEMPERATURE de van giu duoc ca tinh cho cau tro chuyen ma khong hong tool.
+TOOL_TEMPERATURE = float(os.getenv("TOOL_TEMPERATURE", "0.1"))
 
 # Toi uu rieng cho Ollama (local). Khi chuyen sang vLLM tren AWS dat OLLAMA_TUNING=false
 # de khong gui cac truong rieng cua Ollama (keep_alive, options) lam vLLM bao loi.

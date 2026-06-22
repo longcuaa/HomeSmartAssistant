@@ -3,7 +3,7 @@
 Chay tu thu muc goc:  python scripts/demo_brain.py
 Them --reset de xoa tri nho truoc khi chay, demo lai tu trang thai sach.
 
-Yeu cau: Ollama dang chay voi qwen3:8b va nomic-embed-text, va da nap du lieu mau
+Yeu cau: Ollama dang chay voi qwen2.5:7b-instruct va nomic-embed-text, va da nap du lieu mau
 (python scripts/ingest_once.py). Khong can MQTT: thiet bi tu chuyen sang che do gia lap,
 cau xac nhan se co hau to '(gia lap)'.
 
@@ -69,7 +69,7 @@ def main():
         history = say(history, "Chao buoi sang. Goi y giup toi mot meo tiet kiem dien trong nha.")
     except Exception as e:
         print(f"\nLoi khi goi model: {e}")
-        print("Hay chac chan Ollama dang chay (qwen3:8b) va co the truy cap tu may nay.")
+        print("Hay chac chan Ollama dang chay (qwen2.5:7b-instruct) va co the truy cap tu may nay.")
         return
 
     _hr("Buoc 2: Dieu khien thiet bi tuc thi (toi uu toc do)")

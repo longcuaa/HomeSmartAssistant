@@ -39,7 +39,7 @@ The LLM is reached through an **OpenAI-compatible endpoint**. Locally this is Ol
 be running with two models pulled:
 
 ```bash
-ollama pull qwen3:8b            # chat model — MUST support tool calling
+ollama pull qwen2.5:7b-instruct   # chat model — MUST support tool calling
 ollama pull nomic-embed-text    # embedding model
 ```
 

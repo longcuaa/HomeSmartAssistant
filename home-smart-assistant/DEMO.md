@@ -23,7 +23,7 @@ Mọi lệnh chạy từ thư mục gốc của project.
 
 ```bash
 pip install -r requirements.txt
-ollama pull qwen3:8b            # model tro chuyen, phai ho tro tool calling
+ollama pull qwen2.5:7b-instruct   # model tro chuyen, phai ho tro tool calling
 ollama pull nomic-embed-text    # model embedding
 ```
 

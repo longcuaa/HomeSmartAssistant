@@ -62,17 +62,21 @@ def embed(text):
     return resp.data[0].embedding
 
 
-def chat(messages, tools=None, stream=False):
+def chat(messages, tools=None, stream=False, temperature=None):
     """Goi model chat. Truyen tools de bat tool calling, stream de sinh dan.
 
     Gioi han max_tokens de cau tra loi ngan gon va nhanh hon (xem config.MAX_TOKENS).
+    Nhiet do: mac dinh THAP (TOOL_TEMPERATURE) khi co gui cong cu de tool calling dang tin cay;
+    cao hon (TEMPERATURE) cho luot tro chuyen thuan de giu ca tinh. Co the ep bang tham so.
     """
+    if temperature is None:
+        temperature = config.TOOL_TEMPERATURE if tools else config.TEMPERATURE
     kwargs = {
         "model": config.CHAT_MODEL,
         "messages": messages,
         "stream": stream,
         "max_tokens": config.MAX_TOKENS,
-        "temperature": config.TEMPERATURE,
+        "temperature": temperature,
     }
     if tools:
         kwargs["tools"] = tools

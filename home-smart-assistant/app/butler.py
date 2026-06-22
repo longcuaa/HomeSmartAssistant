@@ -127,7 +127,9 @@ def _system():
     Thoi gian va so thich (thay doi theo luot) khong de o day ma chen sat cau hoi (_runtime_context).
     """
     prompt = SYSTEM_PROMPT
-    if not config.ENABLE_THINKING:
+    # /no_think chi co tac dung voi model suy nghi (qwen3). Voi model instruct (qwen2.5) thi
+    # day chi la chu thua trong prompt -> chi them khi dung qwen3.
+    if not config.ENABLE_THINKING and "qwen3" in config.CHAT_MODEL.lower():
         prompt += " /no_think"  # tat suy nghi cua qwen3 de tra loi nhanh hon
     return prompt
 
@@ -254,6 +256,29 @@ def _strip_foreign(text):
     if mt:
         text = text[:mt.start()]
     return text.strip(" \n，,。．、；;:-")
+
+
+# Mot so model (nhat la qwen3 o che do /no_think) thinh thoang "ke ra" loi goi cong cu dang VAN
+# BAN trong noi dung thay vi goi that, vi du: control_device({"device"...}). JSON thuong bi hong
+# (thieu dau hai cham) nen khong thuc thi duoc -> ta CAT bo de chu nha khong thay rac. Day la luoi
+# an toan; cach sua goc la dung model goi cong cu dang tin (qwen2.5-instruct).
+_TOOL_CALL_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in tools._REGISTRY)
+                           + r")\s*[(\[{]")
+
+
+def _strip_tool_call_text(text):
+    """Cat bo doan 'ten_cong_cu(...)' bi ro ri vao van ban tra loi (giu phan truoc no)."""
+    if not text:
+        return text
+    mt = _TOOL_CALL_RE.search(text)
+    if mt:
+        text = text[:mt.start()]
+    return text.strip(" \n，,。．、；;:-")
+
+
+def _clean(text):
+    """Don dau ra cho chu nha: bo khoi suy nghi, chu nuoc ngoai, va tool-call ro ri."""
+    return _strip_tool_call_text(_strip_foreign(_strip_think(text)))
 
 # --- Cau hoi ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
 # Phai xet TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu',
@@ -482,16 +507,22 @@ def _fast_path(message):
             _PENDING.update(action=act, device=None, candidates=acs, scope=None)
             return _choose_phrase(act, acs)
 
-    # 6c) Bat/tat 1 thiet bi (khong co so).
+    # 6c) Bat/tat thiet bi.
     on, off = bool(_ON_RE.search(m)), bool(_OFF_RE.search(m))
-    if (on ^ off) and not num_m:
+    if on ^ off:
         act = "on" if on else "off"
-        if len(cands) == 1:
+        if len(cands) == 1 and not num_m:               # ro 1 thiet bi -> hoi xac nhan
             _PENDING.update(action=act, device=cands[0], candidates=None, scope=None)
             return _confirm_phrase(act, cands[0])
-        if len(cands) > 1:
+        if len(cands) > 1:                              # nhieu thiet bi khop -> hoi chon
             _PENDING.update(action=act, device=None, candidates=cands, scope=None)
             return _choose_phrase(act, cands)
+        if not cands and (num_m or "cai" in words):
+            # 'bat 1 cai cho toi', 'bat giup cai nao do': muon bat/tat nhung CHUA ro thiet bi nao
+            # -> hoi lai ngay (KHONG de LLM doan bua roi sinh tool-call hong). Liet ke toan bo.
+            all_dev = list(tools.HOME)
+            _PENDING.update(action=act, device=None, candidates=all_dev, scope=None)
+            return _choose_phrase(act, all_dev)
     return None
 
 
@@ -551,7 +582,7 @@ def chat(user_message, history=None):
             msg = llm.chat(messages, tools=None).choices[0].message
         except Exception:
             return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
-        reply = _strip_foreign(_strip_think(msg.content)) or "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp trong tài liệu."
+        reply = _clean(msg.content) or "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp trong tài liệu."
         _cache_put(user_message, reply, {"search_knowledge"})
         return reply, _history_after(history, user_message, reply)
     messages = _build_messages(user_message, history)
@@ -567,7 +598,7 @@ def chat(user_message, history=None):
             return "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát.", history
 
         if not msg.tool_calls:
-            reply = _strip_foreign(_strip_think(msg.content))
+            reply = _clean(msg.content)
             if not reply:
                 # Model chi sinh phan suy nghi (bi cat vi het token) ma chua kip tra loi.
                 reply = "Xin lỗi, anh chị hỏi lại giúp tôi được không ạ?"
@@ -619,14 +650,14 @@ def chat_stream(user_message, history=None):
         try:
             for chunk in llm.chat(kmsgs, tools=None, stream=True):
                 vis = tf.feed(getattr(chunk.choices[0].delta, "content", None) or "")
-                clean = _strip_foreign(vis)
+                clean = _strip_tool_call_text(_strip_foreign(vis))
                 if clean:
                     kans.append(clean)
                     yield clean
         except Exception:
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
-        tail = _strip_foreign(tf.flush())
+        tail = _strip_tool_call_text(_strip_foreign(tf.flush()))
         if tail:
             kans.append(tail)
             yield tail
@@ -650,7 +681,7 @@ def chat_stream(user_message, history=None):
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content_parts.append(delta.content)
-                    visible = _strip_foreign(tf.feed(delta.content))
+                    visible = _strip_tool_call_text(_strip_foreign(tf.feed(delta.content)))
                     if visible:
                         produced = True
                         answer.append(visible)
@@ -668,7 +699,7 @@ def chat_stream(user_message, history=None):
             yield "Xin lỗi, hệ thống đang phản hồi chậm, anh chị thử lại sau giây lát."
             return
 
-        tail = _strip_foreign(tf.flush())
+        tail = _strip_tool_call_text(_strip_foreign(tf.flush()))
         if tail:
             produced = True
             answer.append(tail)

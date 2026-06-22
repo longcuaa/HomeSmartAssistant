@@ -14,6 +14,7 @@ Chay thu: python -m app.butler. Can model ho tro tool calling, vi du qwen3.
 """
 import json
 import re
+import random
 import hashlib
 from datetime import datetime
 import config
@@ -193,6 +194,38 @@ _STATUS_RE = re.compile(r"(thiet bi gi|bao nhieu thiet bi|co thiet bi|nhung thie
 _ENV_RE = re.compile(r"(nhiet do trong nha|do am trong nha|khong khi trong nha|"
                      r"do sang trong nha|chi so moi truong)")
 
+# --- Cau hoi ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
+# Phai xet TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu',
+# neu khong cau hoi ngay/gio se bi hieu nham la 'dem thiet bi' -> tra ve danh sach thiet bi.
+_ASK_TIME_RE = re.compile(r"\b(may gio|gio roi)\b")
+_ASK_WEEKDAY_RE = re.compile(r"\b(thu may|thu gi)\b")
+_ASK_DATE_RE = re.compile(r"\b(ngay may|ngay bao nhieu|ngay gi)\b|hom nay la ngay")
+# Thu trong tuan CO DAU de noi/hien cho chu nha (khac _WEEKDAYS ASCII danh cho prompt model).
+_WEEKDAYS_VN = ["thứ Hai", "thứ Ba", "thứ Tư", "thứ Năm", "thứ Sáu", "thứ Bảy", "Chủ nhật"]
+
+# --- Tro chuyen xa giao + cau hoi nang luc/danh tinh -> tra ngay (KHONG goi LLM) cho nhanh.
+# Day la nhung cau lap lai nhieu nhat; tra san giup cau dau tien ~0s thay vi cho prefill LLM.
+# Tra loi van am ap, co cha chut quan tam de giu dung giong quan gia.
+_GREET_RE = re.compile(r"^(xin chao|chao ban|chao buoi (sang|trua|chieu|toi)|chao|hello|hi|hey|alo)\b")
+_THANKS_RE = re.compile(r"^(cam on|cang on|thank|thanks|thank you)\b")
+_BYE_RE = re.compile(r"^(tam biet|hen gap lai|bye|goodbye|chao tam biet|di ngu day)\b")
+_CAPABILITY_RE = re.compile(r"ban (co the )?lam (duoc )?(gi|nhung gi)|ban giup (duoc )?(gi|nhung gi)|"
+                            r"ban biet (lam )?gi|ban co (nhung )?chuc nang gi|giup toi (duoc )?gi")
+_WHOAMI_RE = re.compile(r"\bban la ai\b|gioi thieu (ve )?ban than|\bban ten (la )?gi\b")
+
+_GREET_REPLIES = [
+    "Chào bạn! Hôm nay bạn thế nào? Cần tôi giúp gì cho ngôi nhà không?",
+    "Chào bạn! Tôi luôn ở đây, bạn cần gì cứ nói nhé.",
+    "Chào bạn! Nhớ nghỉ ngơi và uống đủ nước giữa lúc làm việc nhé. Tôi giúp được gì cho bạn?",
+]
+_THANKS_REPLIES = ["Không có gì đâu, tôi luôn sẵn lòng!", "Rất vui được giúp bạn. Cần gì cứ gọi tôi nhé!"]
+_BYE_REPLIES = ["Tạm biệt bạn, nhớ giữ sức khỏe nhé!", "Hẹn gặp lại! Bạn nghỉ ngơi cho khỏe nhé."]
+_CAP_REPLY = ("Tôi có thể bật/tắt và chỉnh nhiệt độ đèn, quạt, điều hòa; cho biết tình trạng thiết bị "
+              "và môi trường trong nhà; xem thời tiết, lịch và nhắc lịch; tra cứu tài liệu, tin tức; "
+              "và ghi nhớ sở thích của bạn. Bạn cần tôi giúp gì nào?")
+_WHOAMI_REPLY = ("Tôi là quản gia AI của ngôi nhà, luôn sẵn sàng chăm lo nhà cửa và đồng hành cùng bạn. "
+                 "Bạn cần gì cứ nói nhé!")
+
 
 # Tu xac nhan / tu choi (da bo dau). Tranh 'dung' vi 'dung'(dung roi) lan 'dung'(dung lam).
 _CONFIRM_RE = re.compile(r"\b(co|u|um|uh|ok|oke|okay|vang|chuan|dong y|duoc|dung roi)\b")
@@ -249,7 +282,27 @@ def _fast_path(message):
                 return tools.control_device(dev, act)
         _clear_pending()                                 # noi gi khac -> bo cho, xu ly nhu lenh moi
 
-    # 2) CAU HOI ve so luong / trang thai -> tra ngay, KHONG coi la lenh (du cau co tu 'bat/tat').
+    # 2) CAU HOI ngay/thu/gio -> tra ngay tu dong ho he thong (KHONG goi LLM).
+    # Dat TRUOC nhanh dem so vi 'thu may'/'ngay bao nhieu' chua tu khoa 'may'/'bao nhieu'.
+    now = datetime.now()
+    if _ASK_TIME_RE.search(m):
+        return f"Bây giờ là {now:%H:%M}."
+    if _ASK_WEEKDAY_RE.search(m) or _ASK_DATE_RE.search(m):
+        return f"Hôm nay là {_WEEKDAYS_VN[now.weekday()]}, ngày {now:%d/%m/%Y}."
+
+    # 3) Tro chuyen xa giao + cau hoi nang luc/danh tinh -> tra san, KHONG goi LLM (nhanh ~0s).
+    if _GREET_RE.search(m):
+        return random.choice(_GREET_REPLIES)
+    if _THANKS_RE.search(m):
+        return random.choice(_THANKS_REPLIES)
+    if _BYE_RE.search(m):
+        return random.choice(_BYE_REPLIES)
+    if _CAPABILITY_RE.search(m):
+        return _CAP_REPLY
+    if _WHOAMI_RE.search(m):
+        return _WHOAMI_REPLY
+
+    # 4) CAU HOI ve so luong / trang thai -> tra ngay, KHONG coi la lenh (du cau co tu 'bat/tat').
     # Phai xet TRUOC phan dieu khien de 'may cai den dang bat' khong bi hieu nham la lenh bat.
     asking_count = bool(re.search(r"\b(may|bao nhieu)\b", m))
     asking_on = "dang bat" in m

@@ -258,7 +258,8 @@ def _fast_path(message):
     m = tools._norm(message)
     if not m:
         return None
-    words = set(m.split())
+    # Tach tu BO dau cau (vd 'den?' -> 'den') de khop ten thiet bi du nguoi dung co go '?,.!'.
+    words = set(re.findall(r"[a-z0-9]+", m))
 
     # 1) Dang cho phan hoi cho mot lenh truoc do?
     if _PENDING["action"]:

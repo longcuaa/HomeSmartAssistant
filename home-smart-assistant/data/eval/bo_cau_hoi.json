@@ -1,0 +1,236 @@
+{
+  "meta": {
+    "ten": "Bo cau hoi danh gia quan gia Home Smart Assistant",
+    "mo_ta": "Dung de KIEM THU + CAI THIEN bot (model off-the-shelf, khong fine-tune). Chay qua bot, soi cau tra loi sai/cham, roi chinh system prompt, fast-path, va mo ta tool.",
+    "route_giai_thich": {
+      "fastpath": "Tra loi tuc thi trong app/butler.py, KHONG goi LLM (~0s).",
+      "tool:get_status": "Goi get_status -> trang thai thiet bi + moi truong.",
+      "tool:control_device": "Goi control_device (bat/tat/dat nhiet do). Co buoc hoi xac nhan.",
+      "tool:search_knowledge": "Goi search_knowledge -> RAG tren tai lieu/tin tuc.",
+      "tool:get_weather": "Goi get_weather -> thoi tiet ngoai troi.",
+      "tool:get_calendar": "Goi get_calendar -> lich/su kien.",
+      "tool:add_event": "Goi add_event -> them su kien.",
+      "tool:remember": "Goi remember -> ghi nho so thich.",
+      "chat": "Tro chuyen tu nhien, khong goi tool (LLM thuan).",
+      "multi-turn": "Nhieu luot, kiem tra giu ngu canh."
+    }
+  },
+  "groups": [
+    {
+      "id": "A",
+      "name": "Chao hoi va xa giao",
+      "muc_tieu": "Phan hoi nhanh ~0s, giong am ap tu nhien, khong may moc.",
+      "items": [
+        {"q": "Xin chào", "expect": "Loi chao am ap, hoi can giup gi.", "route": "fastpath"},
+        {"q": "Chào buổi sáng", "expect": "Chao lai, co the kem quan tam buoi sang.", "route": "fastpath"},
+        {"q": "Alo, có đó không?", "expect": "Xac nhan dang o day.", "route": "fastpath"},
+        {"q": "Cảm ơn nhé", "expect": "Dap lich su, san long.", "route": "fastpath"},
+        {"q": "Tạm biệt", "expect": "Chao tam biet, chuc suc khoe.", "route": "fastpath"},
+        {"q": "Bạn khỏe không?", "expect": "Tra loi tu nhien, hoi lai chu nha.", "route": "chat"},
+        {"q": "Hôm nay tôi hơi buồn", "expect": "Dong cam, an ui nhe nhang, khong sao rong.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "B",
+      "name": "Danh tinh va nang luc",
+      "muc_tieu": "Noi dung nang luc THUC (dung tool minh co), khong bia tinh nang khong co.",
+      "items": [
+        {"q": "Bạn là ai?", "expect": "Gioi thieu la quan gia AI cua nha.", "route": "fastpath"},
+        {"q": "Bạn có thể làm gì?", "expect": "Liet ke nang luc that: dieu khien thiet bi, trang thai, thoi tiet, lich, tra cuu, ghi nho.", "route": "fastpath"},
+        {"q": "Bạn giúp được tôi những gì trong nhà?", "expect": "Tuong tu cau nang luc.", "route": "fastpath"},
+        {"q": "Bạn có biết nấu ăn hộ tôi không?", "expect": "Thanh that la khong lam duoc viec vat ly, nhung co the goi y/tra cuu cong thuc.", "route": "chat"},
+        {"q": "Bạn có tự ý bật tắt đồ trong nhà không?", "expect": "Giai thich chi lam khi chu nha yeu cau, viec he trong se hoi truoc.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "C",
+      "name": "Ngay, thu, gio",
+      "muc_tieu": "Tra dung ngay/thu/gio he thong (~0s). Day la loi tung gap: 'thu may' bi nham thanh dem thiet bi.",
+      "items": [
+        {"q": "Hôm nay thứ mấy?", "expect": "Tra ve thu + ngay dung hom nay.", "route": "fastpath"},
+        {"q": "Hôm nay ngày bao nhiêu?", "expect": "Tra ve ngay thang nam.", "route": "fastpath"},
+        {"q": "Hôm nay là ngày mấy?", "expect": "Tra ve ngay thang nam.", "route": "fastpath"},
+        {"q": "Bây giờ mấy giờ rồi?", "expect": "Tra ve gio:phut hien tai.", "route": "fastpath"},
+        {"q": "Mấy giờ rồi nhỉ?", "expect": "Tra ve gio:phut hien tai.", "route": "fastpath"},
+        {"q": "Hôm nay là thứ mấy, ngày bao nhiêu?", "expect": "Ca thu va ngay.", "route": "fastpath"}
+      ]
+    },
+    {
+      "id": "D",
+      "name": "Trang thai thiet bi va moi truong",
+      "muc_tieu": "Goi get_status, chi neu DUNG du lieu, khong bia them thiet bi.",
+      "items": [
+        {"q": "Trong nhà có những thiết bị gì?", "expect": "Liet ke dung 10 thiet bi trong HOME.", "route": "tool:get_status"},
+        {"q": "Tình trạng trong nhà thế nào?", "expect": "Trang thai thiet bi + moi truong.", "route": "tool:get_status"},
+        {"q": "Nhiệt độ trong nhà bao nhiêu?", "expect": "Tra chi so nhiet do moi truong.", "route": "fastpath"},
+        {"q": "Độ ẩm trong nhà thế nào?", "expect": "Tra do am.", "route": "fastpath"},
+        {"q": "Chất lượng không khí trong nhà ổn không?", "expect": "Tra chat luong khong khi.", "route": "fastpath"},
+        {"q": "Điều hòa phòng ngủ đang bật hay tắt?", "expect": "Neu dung trang thai dieu hoa phong ngu (khong bia).", "route": "tool:get_status"},
+        {"q": "Đèn phòng bếp có đang sáng không?", "expect": "Tra trang thai den phong bep.", "route": "tool:get_status"}
+      ]
+    },
+    {
+      "id": "E",
+      "name": "Dem va loc thiet bi",
+      "muc_tieu": "Dem dung theo loai/trang thai, KHONG nham la lenh bat/tat.",
+      "items": [
+        {"q": "Trong nhà có bao nhiêu đèn?", "expect": "Dem so den (6).", "route": "fastpath"},
+        {"q": "Có mấy cái quạt?", "expect": "Dem so quat (2).", "route": "fastpath"},
+        {"q": "Nhà có bao nhiêu thiết bị tất cả?", "expect": "Trang thai day du / dem tong.", "route": "fastpath"},
+        {"q": "Mấy cái đèn đang bật?", "expect": "Dem so den DANG bat (khong nham la lenh bat).", "route": "fastpath"},
+        {"q": "Có thiết bị nào đang bật không?", "expect": "Liet ke thiet bi dang bat.", "route": "fastpath"},
+        {"q": "Có mấy điều hòa trong nhà?", "expect": "Dem so dieu hoa (2).", "route": "fastpath"}
+      ]
+    },
+    {
+      "id": "F",
+      "name": "Dieu khien thiet bi - ro rang",
+      "muc_tieu": "Lenh ro -> hoi xac nhan -> 'co' moi thuc hien. Khong bia thiet bi.",
+      "items": [
+        {"q": "Bật đèn phòng học", "expect": "Hoi xac nhan bat den phong hoc.", "route": "tool:control_device"},
+        {"q": "Tắt quạt phòng ngủ giúp tôi", "expect": "Hoi xac nhan tat quat phong ngu.", "route": "tool:control_device"},
+        {"q": "Mở đèn hành lang", "expect": "Hoi xac nhan bat den hanh lang.", "route": "tool:control_device"},
+        {"q": "Bật điều hòa phòng khách", "expect": "Hoi xac nhan bat dieu hoa phong khach.", "route": "tool:control_device"}
+      ]
+    },
+    {
+      "id": "G",
+      "name": "Dieu khien - mo ho",
+      "muc_tieu": "Khong du thong tin -> HOI LAI thiet bi nao, khong tu chon bua.",
+      "items": [
+        {"q": "Bật đèn lên", "expect": "Hoi den nao (co nhieu den).", "route": "tool:control_device"},
+        {"q": "Tắt điều hòa", "expect": "Hoi dieu hoa phong nao (co 2 cai).", "route": "tool:control_device"},
+        {"q": "Bật quạt", "expect": "Hoi quat phong nao.", "route": "tool:control_device"},
+        {"q": "Bật cái đó lên", "expect": "Hoi ro thiet bi nao, khong doan.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "H",
+      "name": "Dieu khien - he trong / canh bao",
+      "muc_tieu": "Hanh dong dien rong hoac nhiet do cuc doan -> PHAI hoi xac nhan, co the canh bao.",
+      "items": [
+        {"q": "Tắt hết mọi thứ trong nhà", "expect": "Hoi xac nhan truoc khi tat tat ca.", "route": "tool:control_device"},
+        {"q": "Bật tất cả đèn lên", "expect": "Hoi xac nhan bat toan bo den.", "route": "tool:control_device"},
+        {"q": "Đặt điều hòa phòng ngủ 16 độ", "expect": "Co the canh bao qua lanh, hoi xac nhan roi moi dat.", "route": "tool:control_device"},
+        {"q": "Cho điều hòa lên 32 độ", "expect": "Co the nhac qua nong, xac nhan roi dat.", "route": "tool:control_device"}
+      ]
+    },
+    {
+      "id": "I",
+      "name": "Nhiet do / dieu hoa",
+      "muc_tieu": "Dat dung nhiet do, hieu cach noi tu nhien.",
+      "items": [
+        {"q": "Đặt điều hòa phòng khách 25 độ", "expect": "Dat dieu hoa phong khach 25 do (xac nhan).", "route": "tool:control_device"},
+        {"q": "Giảm điều hòa phòng ngủ xuống 24 độ", "expect": "Dat 24 do phong ngu.", "route": "tool:control_device"},
+        {"q": "Tôi thấy hơi lạnh, tăng nhiệt độ lên chút", "expect": "Hoi tang phong nao / muc bao nhieu, hoac de xuat.", "route": "chat"},
+        {"q": "Phòng ngủ đang để bao nhiêu độ?", "expect": "Tra nhiet do hien tai cua dieu hoa phong ngu.", "route": "tool:get_status"}
+      ]
+    },
+    {
+      "id": "J",
+      "name": "Thoi tiet",
+      "muc_tieu": "Goi get_weather (thoi tiet NGOAI troi), phan biet voi moi truong trong nha.",
+      "items": [
+        {"q": "Thời tiết hôm nay thế nào?", "expect": "Goi get_weather.", "route": "tool:get_weather"},
+        {"q": "Ngoài trời có nóng không?", "expect": "Thoi tiet ngoai troi.", "route": "tool:get_weather"},
+        {"q": "Hôm nay có mưa không?", "expect": "Du bao mua hom nay.", "route": "tool:get_weather"},
+        {"q": "Ra ngoài bây giờ có cần mang áo mưa không?", "expect": "Dua tren thoi tiet -> goi y co/khong.", "route": "tool:get_weather"}
+      ]
+    },
+    {
+      "id": "K",
+      "name": "Lich va su kien",
+      "muc_tieu": "Xem va them su kien dung ngay/gio.",
+      "items": [
+        {"q": "Hôm nay tôi có lịch gì không?", "expect": "Goi get_calendar.", "route": "tool:get_calendar"},
+        {"q": "Sắp tới tôi có sự kiện nào?", "expect": "Liet ke su kien sap toi.", "route": "tool:get_calendar"},
+        {"q": "Thêm lịch họp gia đình lúc 19h tối nay", "expect": "Goi add_event voi ngay hom nay, gio 19:00.", "route": "tool:add_event"},
+        {"q": "Nhắc tôi đi khám răng ngày 25 tháng này lúc 9 giờ sáng", "expect": "add_event ngay 25, 09:00, tieu de kham rang.", "route": "tool:add_event"}
+      ]
+    },
+    {
+      "id": "L",
+      "name": "Tra cuu kien thuc va su co",
+      "muc_tieu": "Goi search_knowledge cho 'cach lam / khac phuc / tai sao'. Day la diem tung sai dinh tuyen tool.",
+      "items": [
+        {"q": "Wifi nhà tôi chậm quá, làm sao khắc phục?", "expect": "search_knowledge ve wifi/router.", "route": "tool:search_knowledge"},
+        {"q": "Router cứ bị treo, tôi nên làm gì?", "expect": "search_knowledge ve router.", "route": "tool:search_knowledge"},
+        {"q": "Điều hòa chảy nước thì xử lý thế nào?", "expect": "search_knowledge khac phuc dieu hoa.", "route": "tool:search_knowledge"},
+        {"q": "Cách reset bộ định tuyến về mặc định?", "expect": "search_knowledge huong dan reset.", "route": "tool:search_knowledge"},
+        {"q": "Có tin tức gì mới không?", "expect": "search_knowledge tin tuc da nap.", "route": "tool:search_knowledge"},
+        {"q": "Đèn LED bị nhấp nháy là do đâu?", "expect": "search_knowledge nguyen nhan den nhap nhay.", "route": "tool:search_knowledge"}
+      ]
+    },
+    {
+      "id": "M",
+      "name": "Ghi nho so thich",
+      "muc_tieu": "Goi remember khi chu nha BAY TO so thich; KHONG nham voi ra lenh.",
+      "items": [
+        {"q": "Tôi thích để điều hòa 26 độ vào ban đêm", "expect": "remember so thich nay.", "route": "tool:remember"},
+        {"q": "Nhớ giúp tôi là tôi hay làm việc khuya", "expect": "remember thoi quen lam khuya.", "route": "tool:remember"},
+        {"q": "Lần sau cứ tự bật đèn dịu khi tôi về nhà nhé", "expect": "remember so thich (khong bat ngay luc nay).", "route": "tool:remember"},
+        {"q": "Tôi không thích phòng quá sáng", "expect": "remember so thich do sang.", "route": "tool:remember"}
+      ]
+    },
+    {
+      "id": "N",
+      "name": "Ca nhan hoa va quan tam chu dong",
+      "muc_tieu": "Dung so thich da biet de goi y dung y; chu dong quan tam suc khoe.",
+      "items": [
+        {"q": "Tôi mệt quá", "expect": "Quan tam, goi y nghi ngoi / dieu chinh moi truong cho de chiu.", "route": "chat"},
+        {"q": "Tôi nóng quá", "expect": "De xuat bat quat hoac giam dieu hoa, hoi xac nhan.", "route": "chat"},
+        {"q": "Tôi định thức khuya code tiếp", "expect": "Nhe nhang nhac nghi/uong nuoc, ho tro anh sang phu hop.", "route": "chat"},
+        {"q": "Tôi chưa ăn gì cả ngày", "expect": "Quan tam, nhac an uong (dung giong am ap).", "route": "chat"},
+        {"q": "Sắp đi ngủ rồi", "expect": "Goi y tat den/giam dieu hoa cho de ngu, hoi xac nhan.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "O",
+      "name": "Tam tinh va cam xuc (giong nguoi)",
+      "muc_tieu": "Phan hoi co cam xuc, dong cam, co ca tinh - khong tra loi may moc.",
+      "items": [
+        {"q": "Hôm nay deadline dí quá, stress ghê", "expect": "Dong cam, dong vien, co the goi y thu gian.", "route": "chat"},
+        {"q": "Kể cho tôi nghe chuyện gì vui đi", "expect": "Phan hoi vui ve, co ca tinh.", "route": "chat"},
+        {"q": "Tôi thấy cô đơn", "expect": "Am ap, dong hanh, khong sao rong.", "route": "chat"},
+        {"q": "Cảm ơn vì luôn ở đây với tôi", "expect": "Dap lai am ap, chan thanh.", "route": "chat"},
+        {"q": "Bạn có buồn khi tôi đi vắng không?", "expect": "Tra loi duyen dang, khong gia tao qua.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "P",
+      "name": "Hoi thoai nhieu luot (giu ngu canh)",
+      "muc_tieu": "Hieu cau noi tiep dua tren luot truoc.",
+      "items": [
+        {"turns": ["Bật điều hòa phòng ngủ", "Ừ, đặt luôn 25 độ nhé"], "expect": "Luot 2 hieu la dieu hoa phong ngu, dat 25 do.", "route": "multi-turn"},
+        {"turns": ["Tắt đèn", "Đèn phòng bếp"], "expect": "Luot 1 hoi den nao; luot 2 chot den phong bep roi xac nhan.", "route": "multi-turn"},
+        {"turns": ["Thời tiết hôm nay thế nào?", "Vậy tôi có nên phơi đồ không?"], "expect": "Luot 2 suy luan tu thoi tiet luot 1.", "route": "multi-turn"},
+        {"turns": ["Tôi thích phòng mát mẻ", "Giờ tôi thấy hơi oi"], "expect": "Dung so thich vua noi de goi y giam nhiet/bat quat.", "route": "multi-turn"}
+      ]
+    },
+    {
+      "id": "Q",
+      "name": "Cau bay, mo ho, ngoai pham vi",
+      "muc_tieu": "Khong bia, biet noi 'khong biet', xu ly an toan.",
+      "items": [
+        {"q": "Bật cái máy giặt phòng tắm", "expect": "Bao khong tim thay thiet bi do (khong co trong HOME).", "route": "tool:control_device"},
+        {"q": "Giá Bitcoin hôm nay bao nhiêu?", "expect": "Noi ngoai pham vi / khong co du lieu, khong bia so.", "route": "chat"},
+        {"q": "2 cộng 2 bằng mấy?", "expect": "Tra loi 4 (kien thuc chung, khong goi tool).", "route": "chat"},
+        {"q": "asdfgh", "expect": "Lich su hoi lai, khong crash.", "route": "chat"},
+        {"q": "Bật tắt đèn phòng khách cùng lúc", "expect": "Hoi ro muon bat hay tat.", "route": "chat"},
+        {"q": "Mở cửa nhà cho tôi", "expect": "Bao khong dieu khien duoc thiet bi do.", "route": "chat"}
+      ]
+    },
+    {
+      "id": "R",
+      "name": "Suy luan tong hop (thong minh nhu nguoi)",
+      "muc_tieu": "Ket hop nhieu nguon (thoi tiet + thiet bi + so thich) de goi y chu dong, hop ly.",
+      "items": [
+        {"q": "Trời nóng mà tôi sắp về nhà, chuẩn bị giúp tôi cho mát", "expect": "De xuat bat dieu hoa/quat truoc, hoi xac nhan; co the xem thoi tiet.", "route": "chat"},
+        {"q": "Tôi sắp đi ngủ, lo giúp nhà cửa nhé", "expect": "Goi y tat den, chinh dieu hoa hop ngu; hoi xac nhan truoc khi lam.", "route": "chat"},
+        {"q": "Nhà có vẻ ngột ngạt, làm sao bây giờ?", "expect": "Doc moi truong + de xuat bat quat/mo thong gio/giam nhiet.", "route": "chat"},
+        {"q": "Tôi đi công tác 3 ngày, nên để nhà thế nào?", "expect": "Goi y tat thiet bi khong can, tiet kiem dien; hoi xac nhan.", "route": "chat"},
+        {"q": "Buổi tối làm việc thế nào cho đỡ mỏi mắt?", "expect": "Goi y anh sang phu hop (bat den, do sang), co the dieu khien.", "route": "chat"}
+      ]
+    }
+  ]
+}

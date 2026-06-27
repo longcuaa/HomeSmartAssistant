@@ -1,0 +1,66 @@
+# Dinh nghia thiet bi. 'name' co dau de noi/hien cho chu nha; 'alias' la cac cach goi
+# (co the co dau hay khong) de Tier 1 khop. 'groups' tro toi cac nhom o duoi (groups.yaml duoc
+# gop trong file nay luon cho gon).
+devices:
+  - id: light_living_01
+    type: light
+    name: "Đèn phòng khách"
+    alias: ["den phong khach", "den PK", "bong phong khach", "den khach", "den ngoai"]
+    room: living_room
+    capabilities: [on_off, brightness, color_temp]
+    mqtt_topic: "home/light/living/01"
+    groups: [den_ca_nha, thiet_bi_pk]
+
+  - id: fan_living_01
+    type: fan
+    name: "Quạt phòng khách"
+    alias: ["quat phong khach", "quat PK", "quat khach", "quat ngoai"]
+    room: living_room
+    capabilities: [on_off, fan_speed]
+    mqtt_topic: "home/fan/living/01"
+    groups: [thiet_bi_pk]
+
+  - id: tv_living_01
+    type: tv
+    name: "TV phòng khách"
+    alias: ["ti vi", "tivi", "TV", "vo tuyen", "tivi phong khach"]
+    room: living_room
+    capabilities: [on_off, volume, channel, input]
+    mqtt_topic: "home/tv/living/01"
+    groups: [thiet_bi_pk]
+
+  - id: light_kitchen_01
+    type: light
+    name: "Đèn phòng bếp"
+    alias: ["den phong bep", "den bep", "den nha bep"]
+    room: kitchen
+    capabilities: [on_off, brightness]
+    mqtt_topic: "home/light/kitchen/01"
+    groups: [den_ca_nha, thiet_bi_bep]
+
+  - id: light_bedroom_01
+    type: light
+    name: "Đèn phòng ngủ"
+    alias: ["den phong ngu", "den PN", "den ngu", "den phong ngu chinh"]
+    room: bedroom_1
+    capabilities: [on_off, brightness, color_temp]
+    mqtt_topic: "home/light/bed1/01"
+    groups: [den_ca_nha, thiet_bi_pn1]
+
+  - id: ac_bedroom_01
+    type: ac
+    name: "Điều hòa phòng ngủ"
+    alias: ["dieu hoa phong ngu", "may lanh phong ngu", "AC phong ngu", "dieu hoa PN", "may lanh"]
+    room: bedroom_1
+    capabilities: [on_off, temperature, mode, fan_speed]
+    mqtt_topic: "home/ac/bed1/01"
+    groups: [dieu_hoa_ca_nha, thiet_bi_pn1]
+
+# Nhom thiet bi (gan san). "*" = toan bo thiet bi.
+groups:
+  den_ca_nha: [light_living_01, light_kitchen_01, light_bedroom_01]
+  dieu_hoa_ca_nha: [ac_bedroom_01]
+  thiet_bi_pk: [light_living_01, fan_living_01, tv_living_01]
+  thiet_bi_bep: [light_kitchen_01]
+  thiet_bi_pn1: [light_bedroom_01, ac_bedroom_01]
+  tat_ca: ["*"]

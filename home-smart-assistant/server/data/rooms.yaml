@@ -1,0 +1,15 @@
+# Dinh nghia phong. 'alias' giup Tier 1 nhan ra phong trong cau noi; 'bot_id' la con bot dat
+# trong phong do (dung lam NGU CANH PHONG: bot phong ngu thi 'bat den' = den phong ngu).
+rooms:
+  living_room:
+    name: "Phòng khách"
+    alias: ["phong khach", "PK", "phong ngoai", "nha truoc"]
+    bot_id: "bot_living_01"
+  kitchen:
+    name: "Phòng bếp"
+    alias: ["phong bep", "nha bep", "bep"]
+    bot_id: "bot_kitchen_01"
+  bedroom_1:
+    name: "Phòng ngủ"
+    alias: ["phong ngu", "PN", "phong ngu chinh"]
+    bot_id: "bot_bed1_01"

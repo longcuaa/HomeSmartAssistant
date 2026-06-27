@@ -1,0 +1,28 @@
+# Tu vung dong tu cho Tier 1 (FST). Khong chua thiet bi (lay tu devices.yaml) — chi la
+# lop tu khoa hanh dong. Muc 'learned' duoc bo phan tu hoc ghi them khi mot cau di qua
+# Tier 3 du tin cay va du nhieu lan (xem core/learning/promoter.py o cac phase sau).
+# Luu y: phai dat ngoac kep "ON"/"OFF" — YAML coi on/off la gia tri boolean (True/False)
+# neu khong trich dan, lam mat khoa nay.
+verbs:
+  "ON": [bat, mo, khoi dong, len]
+  "OFF": [tat, dung, khoa, ngat, dong]
+
+set_temp:
+  verbs: [dat, chinh, cai, de, ha, giam]
+  triggers: [do, nhiet do]      # phai co tu chi nhiet do de phan biet voi so khac
+
+volume:
+  up: [tang]
+  down: [giam]
+  triggers: [am luong, tieng, volume]
+
+group:
+  # tu chi PHAM VI 'toan bo' -> bien lenh bat/tat thanh GROUP_ON/GROUP_OFF.
+  scope_words: [het, tat ca, toan bo, moi thu, ca nha, het thay]
+
+# Cau hoi trang thai (QUERY) — tra ve action GET.
+query:
+  triggers: [the nao, bao nhieu, dang bat, dang tat, trang thai, may do, co bat khong]
+
+# Cac cap (cau da chuan hoa -> intent) do bo phan tu hoc bo sung. De trong luc dau.
+learned: []

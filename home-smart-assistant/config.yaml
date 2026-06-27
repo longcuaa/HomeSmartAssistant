@@ -1,0 +1,67 @@
+# config.yaml — moi tham so dieu chinh duoc o mot noi (xem server/config.py).
+# Bi mat (token/key) de TRONG o day, dat qua bien moi truong (xem ghi chu tung muc).
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  log_level: "INFO"
+
+butler:
+  name: "Tro Ly"
+  address_style: "ong/ba"   # cach xung ho: ong/ba, anh/chi...
+  language: "vi"
+  accent: "north"           # north | south | central
+
+models:
+  llm:
+    provider: "ollama"
+    # base_url co the ghi de bang bien moi truong OLLAMA_BASE_URL (vd khi chuyen sang vLLM tren AWS).
+    base_url: "http://localhost:11434/v1"
+    api_key: "ollama"
+    model: "qwen2.5:3b"
+    timeout_s: 8
+    context_tokens: 512
+    max_tokens: 256
+    temperature: 0.1
+    no_think: true          # chi co tac dung voi model qwen3
+  embedding:
+    # Tier 2: uu tien sentence-transformers neu co cai; neu khong, dung embedder Ollama ben duoi.
+    st_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    ollama_model: "nomic-embed-text"
+  stt:
+    model: "vinai/PhoWhisper-tiny"
+    fallback_model: "vinai/PhoWhisper-small"
+    language: "vi"
+  tts:
+    provider: "piper"       # piper | fpt
+    voice: "vi_VN-vivos-medium"
+    speed: 1.1
+    fpt_api_key: ""         # ghi de bang bien moi truong FPT_API_KEY
+
+redis:
+  # ghi de bang REDIS_URL. Khong ket noi duoc -> tu dong dung cache trong bo nho.
+  url: "redis://localhost:6379"
+  cache_ttl_days: 30
+
+mqtt:
+  broker: "localhost"       # ghi de bang MQTT_BROKER
+  port: 1883
+  username: ""
+  password: ""              # ghi de bang MQTT_PASSWORD
+
+intent:
+  cache_threshold: 1.0      # khop tuyet doi (Tier 0)
+  embedding_threshold: 0.85 # nguong tuong dong (Tier 2)
+  llm_confidence_min: 0.7   # duoi muc nay -> hoi lai
+  learn_min_uses: 3         # dung >= N lan thi thang len Tier 0/1
+  learn_min_confidence: 0.9
+
+home_assistant:
+  url: "http://localhost:8123"
+  token: ""                 # ghi de bang HA_TOKEN
+
+data:
+  devices: "server/data/devices.yaml"
+  rooms: "server/data/rooms.yaml"
+  scenes: "server/data/scenes.yaml"
+  patterns: "server/data/patterns.yaml"

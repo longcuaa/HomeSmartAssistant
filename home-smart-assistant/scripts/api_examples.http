@@ -1,0 +1,53 @@
+# Goi thu API server (Phase 1). Can extension "REST Client" (humao.rest-client):
+# mo file nay, bam "Send Request" phia tren moi muc.
+# Truoc do chay server: uvicorn server.main:app --reload
+
+@base = http://localhost:8000
+
+### Suc khoe + backend dang dung
+GET {{base}}/health
+
+### Liet ke thiet bi
+GET {{base}}/devices
+
+### Tier 1 — bat den phong khach (tat dinh, ~ms)
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "bật đèn phòng khách" }
+
+### Tier 1 — ngu canh bot phong ngu: "bat den" -> den phong ngu
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "bật đèn", "bot_id": "bot_bed1_01" }
+
+### Tier 1 — dat nhiet do (gioi han 16-30)
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "chỉnh điều hòa phòng ngủ 25 độ" }
+
+### Tier 1 — lenh nhom
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "tắt hết đèn" }
+
+### Tier 1 — scene
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "tôi đi ngủ đây" }
+
+### Tier 3 — cau mo ho, can LLM (Ollama phai chay)
+POST {{base}}/command/text
+Content-Type: application/json
+
+{ "text": "nóng quá" }
+
+### Do tre theo tang + ti le trung cache
+GET {{base}}/metrics
+
+### Xoa cache intent
+DELETE {{base}}/cache

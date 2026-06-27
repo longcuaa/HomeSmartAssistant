@@ -10,3 +10,11 @@ beautifulsoup4>=4.12
 requests>=2.31
 apscheduler>=3.10
 paho-mqtt>=2.0
+
+# --- server/ moi (kien truc 3 tang) ---
+pyyaml>=6.0           # doc config.yaml + devices/rooms/scenes/patterns
+pydantic>=2.0         # mo hinh intent/thiet bi
+# Tuy chon (co thi nhanh hon, khong co thi tu giam cap):
+# redis>=5.0                      # Tier 0 cache (khong co -> cache trong bo nho)
+# sentence-transformers>=2.2      # Tier 2 embedding (khong co -> dung Ollama embedder)
+# flashtext>=2.7                  # Tier 1 loc tu khoa nhanh (khong co -> python thuan)

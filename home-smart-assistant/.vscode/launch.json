@@ -1,0 +1,25 @@
+{
+  // Nhan F5 de chay/debug. Dat breakpoint trong server/core/intent/*.py de xem tung tang.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Test intent (Tier 0-3)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/test_intent.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      "name": "Server (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["server.main:app", "--reload", "--port", "8000"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    }
+  ]
+}

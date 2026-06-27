@@ -1,0 +1,38 @@
+# Ngu canh (scene): mot cau noi kich hoat NHIEU thiet bi cung luc.
+# 'trigger_phrases' la cac cau noi (Tier 1 khop theo cum); 'actions' la danh sach thao tac.
+scenes:
+  ngu:
+    name: "Đi ngủ"
+    trigger_phrases: ["di ngu", "ngu thoi", "tat het di ngu", "chuan bi ngu", "toi di ngu day"]
+    actions:
+      - {device_id: light_living_01, action: OFF}
+      - {device_id: light_kitchen_01, action: OFF}
+      - {device_id: tv_living_01, action: OFF}
+      - {device_id: light_bedroom_01, action: SET, brightness: 20}
+      - {device_id: ac_bedroom_01, action: SET, temperature: 26, mode: cool}
+    response_vi: "Dạ, tôi đã chuẩn bị phòng ngủ cho ông/bà. Chúc ông/bà ngủ ngon."
+
+  sang_day:
+    name: "Thức dậy"
+    trigger_phrases: ["thuc roi", "day roi", "bat den buoi sang", "chao buoi sang", "toi day roi"]
+    actions:
+      - {device_id: light_bedroom_01, action: SET, brightness: 80, color_temp: 5000}
+      - {device_id: ac_bedroom_01, action: OFF}
+    response_vi: "Dạ, chào buổi sáng ông/bà. Tôi đã bật đèn phòng ngủ."
+
+  xem_phim:
+    name: "Xem phim"
+    trigger_phrases: ["xem phim", "bat phim", "che do xem phim", "tat den bat tivi"]
+    actions:
+      - {device_id: light_living_01, action: SET, brightness: 15}
+      - {device_id: tv_living_01, action: ON}
+      - {device_id: fan_living_01, action: ON, speed: 2}
+    response_vi: "Dạ, tôi đã chuẩn bị chế độ xem phim. Ông/bà thưởng thức nhé."
+
+  ve_nha:
+    name: "Về nhà"
+    trigger_phrases: ["toi ve roi", "ve nha roi", "che do ve nha", "toi da ve"]
+    actions:
+      - {device_id: light_living_01, action: ON}
+      - {device_id: fan_living_01, action: ON, speed: 1}
+    response_vi: "Dạ, mừng ông/bà về nhà. Tôi đã bật đèn và quạt phòng khách."
